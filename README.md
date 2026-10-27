@@ -9,13 +9,13 @@ Works on **Windows, macOS and Linux** (Wayland and X11). Handles mixed-language 
 macOS / Linux (Terminal):
 
 ```sh
-curl -fsSL https://<your-site>/install.sh | sh
+curl -fsSL https://hold-dictate.vercel.app/install.sh | sh
 ```
 
 Windows (PowerShell):
 
 ```powershell
-irm https://<your-site>/install.ps1 | iex
+irm https://hold-dictate.vercel.app/install.ps1 | iex
 ```
 
 The script installs [uv](https://docs.astral.sh/uv/), the system helpers it needs and hold-dictate, then runs `hold-dictate setup`. Setup asks for a provider, your API key, your language and the hotkey, and starts it at login.
