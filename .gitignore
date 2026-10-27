@@ -8,3 +8,5 @@ env
 *.wav
 .vercel
 .env*
+.cache/design-quality/
+.cache/cloud-sim/
