@@ -1,6 +1,10 @@
 import os
 import struct
+import sys
+import threading
 import time
+
+import pytest
 
 import numpy as np
 
@@ -35,21 +39,30 @@ def ev(code, value):
     return struct.pack(EV_FORMAT, 0, 0, 1, code, value)
 
 
-def drive(cfg, hold_seconds, api_text="dictated text"):
+def drive(cfg, hold_seconds):
+    """Runs a hold of the hotkey through the real detector. Linux uses the evdev reader on a pipe;
+    elsewhere events are fed straight to the detector, which is what the pynput backend does."""
     pasted, fb = [], FakeFeedback()
     d = Dictation(cfg, fb, recorder_factory=FakeRecorder, paster=lambda t: pasted.append(t) or "")
-    r, w = os.pipe()
-    backend = EvdevBackend([os.fdopen(r, "rb", buffering=0)])
     detector = HoldDetector(parse_hotkey(cfg.hotkey))
-
-    import threading
-    t = threading.Thread(target=backend.run, args=(detector, d.on_action), daemon=True)
-    t.start()
-    os.write(w, ev(56, 1) + ev(57, 1))
-    time.sleep(hold_seconds)
-    os.write(w, ev(57, 0) + ev(56, 0))
-    os.close(w)
-    t.join(2)
+    if sys.platform.startswith("linux"):
+        r, w = os.pipe()
+        backend = EvdevBackend([os.fdopen(r, "rb", buffering=0)])
+        t = threading.Thread(target=backend.run, args=(detector, d.on_action), daemon=True)
+        t.start()
+        os.write(w, ev(56, 1) + ev(57, 1))
+        time.sleep(hold_seconds)
+        os.write(w, ev(57, 0) + ev(56, 0))
+        os.close(w)
+        t.join(2)
+    else:
+        for name, ident, down in [("alt", 56, True), ("space", 57, True)]:
+            action = detector.feed(name, ident, down)
+            action and d.on_action(action)
+        time.sleep(hold_seconds)
+        for name, ident in [("space", 57), ("alt", 56)]:
+            action = detector.feed(name, ident, False)
+            action and d.on_action(action)
     for worker in d.threads:
         worker.join(5)
     return pasted, fb

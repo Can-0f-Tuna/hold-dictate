@@ -1,5 +1,6 @@
 import os
 import struct
+import sys
 import pytest
 
 from hold_dictate.hotkey import EV_FORMAT, EvdevBackend, HoldDetector, parse_hotkey
@@ -46,6 +47,7 @@ def _event(code, value):
     return struct.pack(EV_FORMAT, 0, 0, 1, code, value)
 
 
+@pytest.mark.skipif(not sys.platform.startswith("linux"), reason="evdev is Linux only")
 def test_evdev_backend_reads_events():
     r, w = os.pipe()
     seq = [(ALT, 1), (SPACE, 1), (SPACE, 2), (SPACE, 0), (ALT, 0), (30, 1)]
