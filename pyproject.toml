@@ -1,0 +1,33 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "hold-dictate"
+version = "0.2.0"
+description = "Hold a hotkey, speak, release: the text is typed at your cursor. Linux, macOS, Windows."
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "numpy>=1.24",
+    "sounddevice>=0.4.6",
+    "tomli>=2.0; python_version < '3.11'",
+    "pynput>=1.7.7; sys_platform != 'linux'",
+    "pyperclip>=1.8; sys_platform == 'win32'",
+]
+
+[project.optional-dependencies]
+# Offline transcription on your own machine (large download, slower than the cloud providers).
+local = ["faster-whisper>=1.0"]
+# Hotkeys on Linux X11 when you would rather not join the `input` group.
+x11 = ["pynput>=1.7.7"]
+dev = ["pytest>=8"]
+
+[project.scripts]
+hold-dictate = "hold_dictate.cli:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/hold_dictate"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
