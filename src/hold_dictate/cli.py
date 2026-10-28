@@ -120,7 +120,7 @@ def cmd_doctor(_args) -> int:
         line(LocalTranscriber.available(), "local model library", 'uv tool install --force "hold-dictate[local]"')
     else:
         problem = check_api(cfg)
-        line(not problem, f"{cfg.preset()['label']} API key", problem or "Run `hold-dictate setup`.")
+        line(not problem, f"{cfg.preset()['label']} API key", problem or "Run `hold-dictate settings`.")
     print("\nAll good." if ok else "\nFix the items marked FIX, then run this again.")
     return 0 if ok else 1
 
@@ -135,6 +135,33 @@ def cmd_file(args) -> int:
         print("(no speech found)")
         return 0
     print(transcribe(cfg, LocalTranscriber(cfg), speech)[0])
+    return 0
+
+
+def cmd_settings(args) -> int:
+    import time
+    import webbrowser
+    from .settings_ui import SettingsServer, running_url
+    url = ""
+    for _ in range(int(args.wait * 2) + 1):  # the service may still be starting
+        url = running_url()
+        if url:
+            break
+        time.sleep(0.5)
+    if url:
+        print(f"Opening the settings in your browser:\n  {url}")
+        webbrowser.open(url)
+        return 0
+    server = SettingsServer(cfgmod.load(), daemon=False, port=0).start()
+    print("hold-dictate is not running, so this window serves the settings page until you press Ctrl+C:")
+    print(f"  {server.url}")
+    server.open()
+    try:
+        while True:
+            time.sleep(1)
+    except KeyboardInterrupt:
+        pass
+    server.stop()
     return 0
 
 
@@ -158,7 +185,7 @@ def main(argv=None) -> int:
     p.add_argument("--version", action="version", version=__version__)
     sub = p.add_subparsers(dest="command")
     sub.add_parser("run", help="start dictating (default)").set_defaults(fn=cmd_run)
-    s = sub.add_parser("setup", help="guided setup")
+    s = sub.add_parser("setup", help="guided setup in the terminal")
     s.add_argument("--provider", choices=["groq", "openai", "custom", "local"])
     s.add_argument("--api-key")
     s.add_argument("--base-url")
@@ -168,6 +195,9 @@ def main(argv=None) -> int:
     s.add_argument("-y", "--yes", action="store_true", help="no questions; start at login")
     s.add_argument("--no-service", action="store_true", help="do not install start-at-login")
     s.set_defaults(fn=cmd_setup)
+    st = sub.add_parser("settings", help="open the settings page in your browser")
+    st.add_argument("--wait", type=float, default=0, help="seconds to wait for hold-dictate to start")
+    st.set_defaults(fn=cmd_settings)
     sub.add_parser("doctor", help="check that everything is in place").set_defaults(fn=cmd_doctor)
     f = sub.add_parser("transcribe", help="transcribe a WAV file and print it")
     f.add_argument("path")

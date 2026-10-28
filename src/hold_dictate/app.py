@@ -25,8 +25,9 @@ def transcribe(cfg: Config, local: LocalTranscriber, speech) -> tuple[str, str]:
 
 
 class Dictation:
-    def __init__(self, cfg: Config, feedback: Feedback, recorder_factory=None, paster=None):
+    def __init__(self, cfg: Config, feedback: Feedback, recorder_factory=None, paster=None, on_no_key=None):
         self.cfg = cfg
+        self.on_no_key = on_no_key
         self.fb = feedback
         self.local = LocalTranscriber(cfg)
         self.recorder_factory = recorder_factory or audio.Recorder
@@ -40,6 +41,11 @@ class Dictation:
     # Called by the hotkey backend.
     def on_action(self, action: str):
         if action == "start" and self.recorder is None:
+            if self.cfg.provider != "local" and not self.cfg.effective_key():
+                self.fb.error("no API key yet. Add one in the settings.")
+                if self.on_no_key:
+                    self.on_no_key()
+                return
             try:
                 self.recorder = self.recorder_factory(self.fb.level)
             except audio.MicError as e:
@@ -77,6 +83,10 @@ class Dictation:
             if note:
                 self.fb.notify(note)
 
+    def idle(self) -> bool:
+        self.threads = [t for t in self.threads if t.is_alive()]
+        return self.recorder is None and not self.threads
+
     def tick(self):
         """Frees the local model after a long idle stretch."""
         if self.local.model is not None and self.recorder is None:
@@ -85,22 +95,67 @@ class Dictation:
 
 
 def run(cfg: Config) -> int:
+    from . import tray
+    from .settings_ui import SettingsServer, running_url
+    from .updater import Updater
+
+    if running_url():
+        print("hold-dictate is already running. Open its settings with `hold-dictate settings`.", flush=True)
+        return 0
+    backend, problem = choose_backend()
+    if backend is None:  # keep running so the settings page still works; the hotkey waits for a restart
+        print(f"hold-dictate: {problem}", file=sys.stderr, flush=True)
     try:
         hotkey = parse_hotkey(cfg.hotkey)
-    except ValueError as e:
-        print(f"hold-dictate: bad hotkey in config: {e}", file=sys.stderr)
-        return 2
-    backend, problem = choose_backend()
-    if backend is None:
-        print(f"hold-dictate: {problem}", file=sys.stderr)
-        return 1
-    if cfg.provider != "local" and not cfg.effective_key():
-        print("hold-dictate: no API key yet. Run `hold-dictate setup`.", file=sys.stderr)
-        return 1
-    dictation = Dictation(cfg, Feedback(cfg.sounds))
-    print(f"hold-dictate: hold {hotkey} to dictate ({cfg.provider}, keyboard via {backend.name})", flush=True)
+    except ValueError as e:  # fall back to the default so the settings page can fix it
+        problem = problem or f"the hotkey {cfg.hotkey!r} in the config is invalid ({e}); using alt+space"
+        print(f"hold-dictate: {problem}", file=sys.stderr, flush=True)
+        hotkey = parse_hotkey(Config().hotkey)
+
+    feedback = Feedback(cfg)
+    detector = HoldDetector(hotkey)
+    dictation = Dictation(cfg, feedback)
+    updater = Updater(cfg, notify=feedback.notify, is_idle=dictation.idle)
+
+    def on_saved(new_cfg: Config):
+        new_hotkey = parse_hotkey(new_cfg.hotkey)
+        if str(new_hotkey) != str(detector.hotkey) and detector.set_hotkey(new_hotkey):
+            dictation.on_action("stop")
+
+    server = SettingsServer(cfg, on_saved=on_saved, updater=updater).start()
+    server.problem = problem
+    dictation.on_no_key = server.open
+
+    def tick():
+        dictation.tick()
+        updater.tick()
+
+    def listen():
+        if backend is None:
+            while not done.wait(5):
+                updater.tick()
+            return
+        try:
+            backend.run(detector, dictation.on_action, tick)
+        finally:
+            done.set()
+
+    done = threading.Event()
+    threading.Thread(target=listen, daemon=True).start()
+    if backend:
+        print(f"hold-dictate: hold {hotkey} to dictate ({cfg.provider}, keyboard via {backend.name})", flush=True)
+    print(f"hold-dictate: settings at {server.url}", flush=True)
     try:
-        backend.run(HoldDetector(hotkey), dictation.on_action, dictation.tick)
+        if tray.available():
+            try:
+                icon = tray.Tray(on_settings=server.open, on_check_updates=lambda: (updater.check(), server.open()), on_quit=done.set)
+                threading.Thread(target=lambda: (done.wait(), icon.stop()), daemon=True).start()
+                icon.run()
+            except Exception as e:  # no tray is no reason to stop dictating
+                print(f"hold-dictate: tray icon unavailable: {e}", file=sys.stderr, flush=True)
+        while not done.wait(1):
+            pass
     except KeyboardInterrupt:
         pass
+    server.stop()
     return 0

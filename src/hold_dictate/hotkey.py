@@ -51,6 +51,11 @@ class HoldDetector:
         self.down: dict[str, set] = {}  # name -> physical key ids currently held
         self.active = False
 
+    def set_hotkey(self, hotkey: Hotkey) -> str | None:
+        """Switches the hotkey while running. Returns 'stop' if a recording was in progress."""
+        was_active, self.hotkey, self.active = self.active, hotkey, False
+        return "stop" if was_active else None
+
     def is_down(self, name: str) -> bool:
         return bool(self.down.get(name))
 
@@ -181,7 +186,6 @@ class PynputBackend:
     def run(self, detector: HoldDetector, on_action, on_tick=None, tick_seconds: float = 5.0):
         from pynput import keyboard
 
-        hotkey = detector.hotkey
         win_state: set = set()
 
         def handle(key, pressed):
@@ -198,6 +202,7 @@ class PynputBackend:
             for mod, codes in _WIN_VK.items():
                 if vk in codes:
                     (win_state.add if down else win_state.discard)(mod)
+            hotkey = detector.hotkey  # read each time: the settings page can change it while running
             if hotkey.key == "space" and vk == 0x20 and hotkey.mods <= win_state:
                 listener.suppress_event()
             return True
@@ -208,6 +213,7 @@ class PynputBackend:
                 import Quartz
                 code = Quartz.CGEventGetIntegerValueField(event, Quartz.kCGKeyboardEventKeycode)
                 flags = Quartz.CGEventGetFlags(event)
+                hotkey = detector.hotkey
                 if hotkey.key == "space" and code == 49 and all(flags & _MAC_FLAGS[m] for m in hotkey.mods):
                     return None
             except Exception:

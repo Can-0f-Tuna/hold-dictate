@@ -25,8 +25,8 @@ TONES = {"start": _tone([660]), "stop": _tone([520]), "error": _tone([300, 220],
 
 
 class Feedback:
-    def __init__(self, sounds: bool = True):
-        self.sounds = sounds
+    def __init__(self, cfg=None):
+        self.cfg = cfg  # read on every use, so changes from the settings page apply at once
         self.proc = None
         self.events = None
         if sys.platform.startswith("linux") and os.environ.get("WAYLAND_DISPLAY") and shutil.which("quickshell"):
@@ -49,7 +49,7 @@ class Feedback:
 
     def _beep(self, name):
         # The overlay already signals state on Linux with quickshell; other systems get a beep.
-        if not self.sounds or self.events:
+        if (self.cfg and not self.cfg.sounds) or self.events:
             return
         def play():
             try:
@@ -62,6 +62,9 @@ class Feedback:
     def recording(self):
         if self.events:
             self._ensure_overlay()
+        if self.cfg:
+            c = self.cfg
+            self._send(f"C {c.overlay_bg} {c.overlay_bars} {c.overlay_position} {c.overlay_size:.2f}")
         self._send("S")
         self._beep("start")
 
