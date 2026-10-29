@@ -71,7 +71,7 @@ class Config:
     idle_unload_seconds: float = 900.0  # free the local model after this long unused
     auto_update: bool = True  # install new releases from GitHub once a day, while idle
     overlay_bg: str = "#0a0a0b"  # recording pill background (Linux overlay)
-    overlay_bars: str = "#ffffff"  # recording pill bar colour
+    overlay_bars: str = "#6b80ff"  # recording pill dot colour
     overlay_position: str = "bottom"  # bottom | top
     overlay_size: float = 1.0  # scale of the pill, 0.75 to 1.5
 

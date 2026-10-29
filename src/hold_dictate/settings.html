@@ -50,8 +50,8 @@ button:disabled { opacity:.5; cursor:default; }
 .msg { font-size:13px; margin:0; min-height:1em; }
 .msg.ok { color:var(--ok); } .msg.bad { color:var(--bad); }
 .stage { border:1px solid var(--line); border-radius:10px; background:var(--card); height:150px; position:relative; overflow:hidden; }
-.pill { position:absolute; left:50%; display:flex; align-items:center; justify-content:center; gap:3px; width:196px; height:44px; border-radius:22px; border:1px solid #2a2a2e; transform:translateX(-50%) scale(var(--s,1)); transition:top .2s, bottom .2s; }
-.pill i { display:block; width:3px; height:3px; border-radius:1.5px; }
+.pill { position:absolute; left:50%; display:grid; place-items:center; width:224px; height:56px; border-radius:28px; border:1px solid #2a2a2e; transform:translateX(-50%) scale(var(--s,1)); transition:top .2s, bottom .2s; }
+.pill canvas { display:block; width:192px; height:40px; }
 .colors { display:flex; gap:16px; flex-wrap:wrap; }
 .colors label { display:flex; gap:8px; align-items:center; font-size:14px; }
 input[type=color] { width:36px; height:28px; border:1px solid var(--line); border-radius:6px; background:none; padding:2px; cursor:pointer; }
@@ -338,9 +338,12 @@ window.addEventListener('keydown', e => {
 }, true);
 
 // ---- recording pill preview ----
-const N = 27, half = 13;
-$('pill').innerHTML = '<i></i>'.repeat(N);
-const bars = [...$('pill').children];
+// the same halftone bars as overlay.qml: 3 dot columns per bar, dense core, finer tips
+const CELL = 2.5, DOT = 2.1, N = Math.floor(192 / (CELL * 4)) | 1, ROWS = Math.floor(40 / CELL), MID = (N - 1) / 2;
+$('pill').innerHTML = '<canvas width="384" height="80"></canvas>';
+const cv = $('pill').firstChild, ctx = cv.getContext('2d');
+let dotColor = '#6b80ff';
+const heights = new Array(N).fill(0.4);
 function drawPill() {
   if (!S) return;
   const c = S.config, pill = $('pill');
@@ -348,22 +351,35 @@ function drawPill() {
   pill.style.setProperty('--s', c.overlay_size * 0.9);
   pill.style.top = c.overlay_position === 'top' ? '24px' : 'auto';
   pill.style.bottom = c.overlay_position === 'top' ? 'auto' : '24px';
-  bars.forEach(b => b.style.background = c.overlay_bars);
+  dotColor = c.overlay_bars; paintPill();
 }
-const heights = new Array(N).fill(3);
+function paintPill() {
+  ctx.setTransform(2, 0, 0, 2, 0, 0); ctx.clearRect(0, 0, 192, 40);
+  ctx.fillStyle = dotColor; ctx.beginPath();
+  const maxH = ROWS / 2 - 1, x0 = (192 - N * 4 * CELL + CELL) / 2, y0 = (40 - ROWS * CELL) / 2;
+  for (let i = 0; i < N; i++) {
+    const h = Math.max(1, heights[i] * maxH), cx = x0 + i * 4 * CELL;
+    for (let r = 0; r < ROWS; r++) {
+      const y = Math.abs(r + 0.5 - ROWS / 2);
+      if (y > h + 0.5) continue;
+      const sz = DOT * (0.45 + 0.55 * (1 - Math.pow(y / (h + 0.5), 1.4) * 0.85)), off = (CELL - sz) / 2;
+      for (let k = 0; k < 3; k++) ctx.rect(cx + k * CELL + off, y0 + r * CELL + off, sz, sz);
+    }
+  }
+  ctx.fill();
+}
 function frame(now) {
   requestAnimationFrame(frame);
   const tt = now / 1000;
   const env = 0.35 + 0.3 * Math.sin(tt * 2.1) * Math.sin(tt * 3.7) + 0.2 * Math.sin(tt * 7.3);
-  bars.forEach((b, i) => {
-    const d = Math.abs(i - half), taper = 1 - Math.pow(d / (half + 1), 2) * 0.55;
-    const v = Math.max(0, env * taper * (0.78 + 0.22 * Math.sin(tt * 9 + i * 1.7)) * (0.7 + 0.3 * Math.sin(tt * 2 - d * 0.5)));
-    heights[i] += (3 + v * 27 - heights[i]) * 0.25;
-    b.style.height = heights[i].toFixed(1) + 'px';
-    b.style.opacity = (0.45 + 0.55 * Math.min(1, v * 1.6)).toFixed(2);
-  });
+  for (let i = 0; i < N; i++) {
+    const d = Math.abs(i - MID), taper = 1 - Math.pow(d / MID, 2) * 0.7;
+    const v = Math.min(1, Math.max(0, 2.4 * env * taper * (0.78 + 0.22 * Math.sin(tt * 9 + i * 1.7)) * (0.7 + 0.3 * Math.sin(tt * 2 - d * 0.5))));
+    heights[i] += (0.035 + v * 0.97 - heights[i]) * 0.25;
+  }
+  paintPill();
 }
-if (!matchMedia('(prefers-reduced-motion: reduce)').matches) requestAnimationFrame(frame);
+if (!matchMedia('(prefers-reduced-motion: reduce)').matches) requestAnimationFrame(frame); else paintPill();
 for (const id of ['overlay_bg', 'overlay_bars']) {
   $(id).addEventListener('input', () => { S.config[id] = $(id).value; drawPill(); });
   $(id).addEventListener('change', () => save({ [id]: $(id).value }));
@@ -371,7 +387,7 @@ for (const id of ['overlay_bg', 'overlay_bars']) {
 $('overlay_size').addEventListener('input', () => { S.config.overlay_size = parseFloat($('overlay_size').value); drawPill(); });
 $('overlay_size').addEventListener('change', () => save({ overlay_size: parseFloat($('overlay_size').value) }));
 document.querySelectorAll('#overlay_position button').forEach(b => b.onclick = () => save({ overlay_position: b.dataset.v }));
-$('resetLook').onclick = () => save({ overlay_bg: '#0a0a0b', overlay_bars: '#ffffff', overlay_position: 'bottom', overlay_size: 1 });
+$('resetLook').onclick = () => save({ overlay_bg: '#0a0a0b', overlay_bars: '#6b80ff', overlay_position: 'bottom', overlay_size: 1 });
 
 // ---- updates and service ----
 $('checkUpd').onclick = async () => { $('checkUpd').disabled = true; try { S = await api('/api/update/check', {}); render(S); } finally { $('checkUpd').disabled = false; } };
