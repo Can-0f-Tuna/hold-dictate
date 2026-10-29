@@ -39,8 +39,9 @@ code { font:500 .9em var(--mono); background:var(--soft); border:1px solid var(-
 
 .wrap { max-width:880px; margin:0 auto; padding:0 var(--s-6); }
 
-/* the save indicator: top right, and it stays in view while you scroll */
-.bar { position:sticky; top:0; z-index:5; height:0; display:flex; justify-content:flex-end; }
+/* the save indicator: top right. Its idle text scrolls away with the page; "Saved" and errors stay in view for a moment */
+.bar { position:relative; top:0; z-index:5; height:0; display:flex; justify-content:flex-end; }
+.bar.float { position:sticky; }
 .save { display:flex; align-items:center; gap:var(--s-2); height:32px; margin:var(--s-4) calc(-1 * var(--s-3)) 0 0; padding:0 var(--s-3); border-radius:var(--r-pill);
   background:color-mix(in srgb, var(--paper) 88%, transparent); -webkit-backdrop-filter:blur(8px); backdrop-filter:blur(8px);
   font-size:var(--t-sm); color:var(--muted); white-space:nowrap; border:1px solid transparent; transition:background .2s, border-color .2s, box-shadow .2s; }
@@ -353,7 +354,9 @@ function saveState(kind, text) {
   el.lastChild.textContent = label;
   clearTimeout(saveTimer);
   if (kind === 'saved') saveTimer = setTimeout(() => saveState('idle'), 2200);
+  floatSave();
 }
+function floatSave() { document.querySelector('.bar').classList.toggle('float', scrollY > 24 && !$('save').classList.contains('idle')); }
 async function save(changes) {
   saveState('saving');
   try { S = await api('/api/config', changes); render(S); saveState('saved'); return true; }
@@ -799,7 +802,7 @@ const still = matchMedia('(prefers-reduced-motion: reduce)').matches;
 addEventListener('resize', () => drawWave(performance.now()));
 
 // ---- start ----
-addEventListener('scroll', () => document.querySelector('.bar').classList.toggle('float', scrollY > 24), { passive: true });
+addEventListener('scroll', floatSave, { passive: true });
 saveState('idle');
 const refresh = () => api('/api/state').then(s => { S = s; render(s); if ($('save').classList.contains('failed')) saveState('idle'); }).catch(() => {}); // the hero and the stale banner already say what went wrong
 if (S) render(S); else refresh();
