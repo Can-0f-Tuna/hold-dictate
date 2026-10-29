@@ -50,11 +50,11 @@ def make_cfg(api, **kw):
 
 def test_api_request_shape(api):
     api.text = "  שלום world "
-    out = transcribe_api(make_cfg(api, language="he", prompt="hint"), tone(0.5))
+    out = transcribe_api(make_cfg(api, languages="fr", prompt="hint"), tone(0.5))
     assert out == "שלום world"
     method, path, auth, body = api.requests[-1]
     assert path == "/v1/audio/transcriptions" and auth == "Bearer secret"
-    for needle in (b'name="model"\r\n\r\nm1', b'name="language"\r\n\r\nhe', b'name="prompt"\r\n\r\nhint', b"RIFF"):
+    for needle in (b'name="model"\r\n\r\nm1', b'name="language"\r\n\r\nfr', b'name="prompt"\r\n\r\nhint', b"RIFF"):
         assert needle in body
 
 
@@ -77,3 +77,25 @@ def test_check_api(api):
     assert check_api(make_cfg(api)) == ""
     api.status = 401
     assert "key" in check_api(make_cfg(api))
+
+
+def test_language_hints():
+    from hold_dictate.config import HEBREW_PROMPT
+    from hold_dictate.providers import language_hints
+    assert language_hints(config.Config(languages="fr")) == ("fr", "")
+    assert language_hints(config.Config(languages="he")) == ("", HEBREW_PROMPT)  # forced Hebrew mangles English
+    assert language_hints(config.Config(languages="he", provider="local")) == ("he", HEBREW_PROMPT)
+    assert language_hints(config.Config(languages="he,en")) == ("", HEBREW_PROMPT)
+    force, prompt = language_hints(config.Config(languages="he,en,ru", prompt="Kubernetes"))
+    assert force == "" and prompt.startswith(HEBREW_PROMPT) and "Привет" in prompt and prompt.endswith("Kubernetes")
+    assert language_hints(config.Config()) == ("", "")
+
+
+def test_language_outside_the_list_is_transcribed_again(api, monkeypatch):
+    from hold_dictate import providers
+    answers = iter([("مرحبا", "arabic"), ("שלום", "")])
+    sent = []
+    monkeypatch.setattr(providers, "_request", lambda cfg, audio, lang, prompt, fmt: sent.append((lang, fmt)) or next(answers))
+    cfg = config.Config(provider="groq", api_key="k", languages="he,en")
+    assert transcribe_api(cfg, tone(0.5)) == "שלום"
+    assert sent == [("", "verbose_json"), ("he", "json")]

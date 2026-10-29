@@ -119,12 +119,31 @@ def test_update_command_installs_through_the_daemon(server, monkeypatch, capsys)
     assert asked == ["install"] and "v9.9.9" in capsys.readouterr().out
 
 
-def test_hebrew_language_maps_to_prompt(server):
-    _, state = call(server, "/api/config", {"language": "he"})
-    assert server.cfg.prompt == HEBREW_PROMPT and server.cfg.language == ""
-    assert state["config"]["language"] == "he"
-    call(server, "/api/config", {"language": "en"})
-    assert server.cfg.prompt == "" and server.cfg.language == "en"
+def test_languages_are_a_list(server):
+    _, state = call(server, "/api/config", {"languages": ["he", "EN", "he"]})
+    assert server.cfg.languages == "he,en" and state["config"]["languages"] == ["he", "en"]
+    assert ["he", "Hebrew"] in state["languages"]
+    code, body = call(server, "/api/config", {"languages": ["he", "klingon"]})
+    assert code == 400 and "klingon" in body["error"] and server.cfg.languages == "he,en"
+    call(server, "/api/config", {"languages": []})
+    assert server.cfg.languages == ""
+
+
+def test_old_language_settings_migrate(tmp_path):
+    p = tmp_path / "c.toml"
+    p.write_text(f'language = ""\nprompt = "{HEBREW_PROMPT}"\n')
+    cfg = config.load(p)
+    assert cfg.languages == "he,en" and cfg.prompt == ""
+    p.write_text('language = "fr"\n')
+    assert config.load(p).languages == "fr"
+    config.save(config.load(p), p)
+    assert config.load(p).languages == "fr" and "language =" not in p.read_text()
+
+
+def test_token_survives_a_restart(server):
+    again = SettingsServer(Config(), port=0)
+    assert again.token == server.token
+    again.httpd.server_close()
 
 
 def test_running_url_finds_the_daemon(server):

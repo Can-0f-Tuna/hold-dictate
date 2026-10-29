@@ -13,6 +13,66 @@ APP = "hold-dictate"
 
 HEBREW_PROMPT = "שלום, אני כותב בעברית ומשלב מילים באנגלית כמו pull request, GitHub ו-deploy."
 
+# Languages Whisper knows: code, English name, and a short sentence in the language. The sentences go into
+# the transcription prompt, which nudges the model toward the languages you picked.
+LANGUAGES = [
+    ("en", "English", "Hello, I'm dictating in English."),
+    ("he", "Hebrew", "שלום, אני מכתיב בעברית."),
+    ("ar", "Arabic", "مرحبا، أنا أتحدث بالعربية."),
+    ("ru", "Russian", "Привет, я говорю по-русски."),
+    ("es", "Spanish", "Hola, estoy dictando en español."),
+    ("fr", "French", "Bonjour, je dicte en français."),
+    ("de", "German", "Hallo, ich diktiere auf Deutsch."),
+    ("it", "Italian", "Ciao, sto dettando in italiano."),
+    ("pt", "Portuguese", "Olá, estou ditando em português."),
+    ("nl", "Dutch", "Hallo, ik dicteer in het Nederlands."),
+    ("pl", "Polish", "Cześć, dyktuję po polsku."),
+    ("uk", "Ukrainian", "Привіт, я диктую українською."),
+    ("tr", "Turkish", "Merhaba, Türkçe dikte ediyorum."),
+    ("el", "Greek", "Γεια σας, υπαγορεύω στα ελληνικά."),
+    ("hi", "Hindi", "नमस्ते, मैं हिंदी में बोल रहा हूँ।"),
+    ("zh", "Chinese", "你好，我在用中文听写。"),
+    ("ja", "Japanese", "こんにちは、日本語で話しています。"),
+    ("ko", "Korean", "안녕하세요, 한국어로 말하고 있어요."),
+    ("fa", "Persian", "سلام، من فارسی صحبت می‌کنم."),
+    ("ro", "Romanian", "Bună, dictez în română."),
+    ("cs", "Czech", "Ahoj, diktuji česky."),
+    ("sv", "Swedish", "Hej, jag dikterar på svenska."),
+    ("hu", "Hungarian", "Szia, magyarul diktálok."),
+    ("vi", "Vietnamese", "Xin chào, tôi đang nói tiếng Việt."),
+    ("th", "Thai", "สวัสดี ฉันกำลังพูดภาษาไทย"),
+    ("id", "Indonesian", "Halo, saya sedang mendikte dalam bahasa Indonesia."),
+    ("da", "Danish", "Hej, jeg dikterer på dansk."),
+    ("fi", "Finnish", "Hei, sanelen suomeksi."),
+    ("no", "Norwegian", "Hei, jeg dikterer på norsk."),
+    ("bg", "Bulgarian", "Здравейте, диктувам на български."),
+    ("ca", "Catalan", "Hola, estic dictant en català."),
+    ("hr", "Croatian", "Bok, diktiram na hrvatskom."),
+    ("sk", "Slovak", "Ahoj, diktujem po slovensky."),
+    ("sr", "Serbian", "Здраво, диктирам на српском."),
+    ("lt", "Lithuanian", "Labas, diktuoju lietuviškai."),
+    ("ur", "Urdu", "ہیلو، میں اردو میں بول رہا ہوں۔"),
+    ("bn", "Bengali", "হ্যালো, আমি বাংলায় বলছি।"),
+    ("ta", "Tamil", "வணக்கம், நான் தமிழில் பேசுகிறேன்."),
+    ("ms", "Malay", "Helo, saya bercakap dalam bahasa Melayu."),
+    ("yi", "Yiddish", "שלום, איך רעד אויף ייִדיש."),
+]
+# The rest of Whisper's languages, without a prompt sentence.
+LANGUAGES += [(code, name, "") for code, name in [
+    ("af", "Afrikaans"), ("am", "Amharic"), ("hy", "Armenian"), ("as", "Assamese"), ("az", "Azerbaijani"),
+    ("ba", "Bashkir"), ("eu", "Basque"), ("be", "Belarusian"), ("bs", "Bosnian"), ("br", "Breton"),
+    ("my", "Burmese"), ("et", "Estonian"), ("fo", "Faroese"), ("gl", "Galician"), ("ka", "Georgian"),
+    ("gu", "Gujarati"), ("ht", "Haitian Creole"), ("ha", "Hausa"), ("is", "Icelandic"), ("kn", "Kannada"),
+    ("kk", "Kazakh"), ("km", "Khmer"), ("lo", "Lao"), ("la", "Latin"), ("lv", "Latvian"), ("ln", "Lingala"),
+    ("lb", "Luxembourgish"), ("mk", "Macedonian"), ("mg", "Malagasy"), ("ml", "Malayalam"), ("mt", "Maltese"),
+    ("mi", "Maori"), ("mr", "Marathi"), ("mn", "Mongolian"), ("ne", "Nepali"), ("nn", "Nynorsk"),
+    ("oc", "Occitan"), ("ps", "Pashto"), ("pa", "Punjabi"), ("sa", "Sanskrit"), ("sn", "Shona"),
+    ("sd", "Sindhi"), ("si", "Sinhala"), ("sl", "Slovenian"), ("so", "Somali"), ("su", "Sundanese"),
+    ("sw", "Swahili"), ("tl", "Tagalog"), ("tg", "Tajik"), ("tt", "Tatar"), ("bo", "Tibetan"), ("tk", "Turkmen"),
+    ("uz", "Uzbek"), ("cy", "Welsh"), ("yo", "Yoruba"),
+]]
+LANGUAGE_NAMES = {code: name for code, name, _ in LANGUAGES}
+
 # Cloud providers that speak the OpenAI audio-transcription API.
 PROVIDERS = {
     "groq": {
@@ -83,8 +143,8 @@ class Config:
     api_key: str = ""
     base_url: str = ""  # only for provider = "custom"; overrides the preset otherwise
     model: str = ""  # empty = Automatic: the provider's recommended model
-    language: str = ""  # ISO code such as "en"; empty = auto-detect
-    prompt: str = ""  # optional hint that nudges spelling and language mix
+    languages: str = ""  # the languages you speak, comma-separated codes such as "he,en"; empty = any language
+    prompt: str = ""  # optional spelling hint: words and names the transcriber should spell your way
     hotkey: str = "alt+space"
     local_model: str = "small"  # faster-whisper model name or Hugging Face repo; "small" is Automatic
     local_fallback: bool = True  # use the local model when the cloud request fails (if installed)
@@ -112,6 +172,9 @@ class Config:
     def effective_model(self) -> str:
         return self.model or self.preset()["model"]
 
+    def language_codes(self) -> list[str]:
+        return [c for c in (part.strip().lower() for part in self.languages.split(",")) if c]
+
 
 def load(path: Path | None = None) -> Config:
     path = path or config_path()
@@ -122,11 +185,38 @@ def load(path: Path | None = None) -> Config:
         for key, value in data.items():
             if key in known:
                 setattr(cfg, key, value)
+        if "languages" not in data:
+            migrate_language(cfg, data)
     return cfg
+
+
+def migrate_language(cfg: Config, data: dict):
+    """Before 0.5 there was one `language`, and Hebrew was stored as auto-detect plus a Hebrew prompt."""
+    if cfg.prompt == HEBREW_PROMPT:
+        cfg.prompt, cfg.languages = "", "he,en"
+    elif data.get("language"):
+        cfg.languages = str(data["language"])
+
+
+def clean_languages(value) -> str:
+    """'he, EN,he' or ['he', 'en'] -> 'he,en'. Raises ValueError for a code Whisper does not know."""
+    parts = value if isinstance(value, list) else str(value).split(",")
+    codes = []
+    for part in parts:
+        code = str(part).strip().lower()
+        if not code:
+            continue
+        if code not in LANGUAGE_NAMES:
+            raise ValueError(f"unknown language {code}")
+        if code not in codes:
+            codes.append(code)
+    return ",".join(codes)
 
 
 def coerce(name: str, value):
     """Converts a value from the settings page to the type of the Config field, or raises ValueError."""
+    if name == "languages":
+        return clean_languages(value)
     default = getattr(Config(), name)
     if isinstance(default, bool):
         if not isinstance(value, bool):

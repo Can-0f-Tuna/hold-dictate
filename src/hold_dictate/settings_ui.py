@@ -1,6 +1,6 @@
 """The settings page: a small web server on 127.0.0.1 that the browser talks to.
 
-Only this computer can reach it. Every request needs the per-run token, and API calls must carry it
+Only this computer can reach it. Every request needs the token, and API calls must carry it
 in a header, which a web page on another origin cannot send without a CORS preflight we never allow.
 """
 import importlib.util
@@ -15,9 +15,10 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
 from . import __version__, config as cfgmod, ducking
-from .config import DUCK_MODES, HEBREW_PROMPT, LOCAL_MODELS, OVERLAY_STYLES, PROVIDERS, Config
+from .config import DUCK_MODES, LANGUAGES, LOCAL_MODELS, OVERLAY_STYLES, PROVIDERS, Config
 
 PAGE = Path(__file__).with_name("settings.html")
+FONTS = {"/fonts/geist.woff2": "geist-latin.woff2", "/fonts/geist-mono.woff2": "geist-mono-latin.woff2"}
 PORT = 47811
 SECRET_FIELDS = {"api_key"}
 EDITABLE = {f.name for f in fields(Config)} - {"idle_unload_seconds"}
@@ -40,21 +41,14 @@ def running_url(timeout: float = 1.0) -> str:
     return ""
 
 
-def language_choice(cfg: Config) -> str:
-    """The language as the page shows it. Hebrew is stored as auto-detect plus a Hebrew prompt."""
-    if cfg.prompt == HEBREW_PROMPT:
-        return "he"
-    return cfg.language
-
-
-def apply_language(cfg: Config, choice: str):
-    cfg.language = choice
-    if cfg.prompt == HEBREW_PROMPT:
-        cfg.prompt = ""
-    if choice == "he":
-        cfg.prompt = HEBREW_PROMPT  # keeps English words in Latin letters
-        if cfg.provider != "local":
-            cfg.language = ""  # forcing Hebrew makes Whisper mangle the English words
+def saved_token() -> str:
+    """The token of the previous run. Keeping it means a settings tab left open still works after
+    hold-dictate restarts, for example after an update."""
+    try:
+        token = json.loads(runtime_file().read_text(encoding="utf-8")).get("token", "")
+        return token if isinstance(token, str) and len(token) >= 24 else ""
+    except Exception:
+        return ""
 
 
 class SettingsServer:
@@ -66,7 +60,7 @@ class SettingsServer:
         self.updater = updater
         self.daemon = daemon
         self.problem = ""  # set when the hotkey cannot work, shown on the page
-        self.token = secrets.token_urlsafe(24)
+        self.token = (daemon and saved_token()) or secrets.token_urlsafe(24)
         self.lock = threading.Lock()
         handler = type("Handler", (_Handler,), {"app": self})
         try:
@@ -101,7 +95,7 @@ class SettingsServer:
     def state(self) -> dict:
         cfg = self.cfg
         values = {k: v for k, v in asdict(cfg).items() if k in EDITABLE and k not in SECRET_FIELDS}
-        values["language"] = language_choice(cfg)
+        values["languages"] = cfg.language_codes()
         key = cfg.api_key
         updater = self.updater
         return {
@@ -114,6 +108,7 @@ class SettingsServer:
             "key_from_env": bool(cfg.effective_key()) and not key,
             "providers": {k: {"label": v["label"], "keys_url": v["keys_url"], "model": v["model"], "models": v["models"]} for k, v in PROVIDERS.items()},
             "local_models": LOCAL_MODELS,
+            "languages": [[code, name] for code, name, _ in LANGUAGES],
             "local_installed": importlib.util.find_spec("faster_whisper") is not None,
             "overlay": sys.platform.startswith("linux"),
             "ducking": ducking.available(),
@@ -131,15 +126,11 @@ class SettingsServer:
         from .hotkey import parse_hotkey
         new = Config(**asdict(self.cfg))
         for name, value in changes.items():
-            if name == "language":
-                continue
             if name not in EDITABLE:
                 raise ValueError(f"unknown setting {name}")
             if name == "api_key" and not str(value).strip():
                 continue  # empty field means keep the saved key
             setattr(new, name, cfgmod.coerce(name, value))
-        if "language" in changes:
-            apply_language(new, str(changes["language"]).strip())
         if new.provider not in (*PROVIDERS, "local"):
             raise ValueError("unknown provider")
         parse_hotkey(new.hotkey)
@@ -225,6 +216,8 @@ class _Handler(BaseHTTPRequestHandler):
             state = json.dumps(self.app.state(), ensure_ascii=False).replace("</", "<\\/")
             page = PAGE.read_text(encoding="utf-8").replace("/*STATE*/null", state, 1)
             return self._send(200, page.encode("utf-8"), "text/html; charset=utf-8")
+        if path in FONTS and self._allowed(self.app.token):  # the Host check only: fonts are not private
+            return self._send(200, (PAGE.parent / "fonts" / FONTS[path]).read_bytes(), "font/woff2")
         if not self._allowed(self.headers.get("X-Token", "")):
             return self._json({"error": "forbidden"}, 403)
         if path == "/api/ping":

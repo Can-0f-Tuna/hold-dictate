@@ -104,21 +104,48 @@ def test_dictation_ducks_while_recording(api):
     assert fake.snapshots == 1 and fake.lowest() < 0.3 and fake.volume == 1.0
 
 
-def test_pulse_backend_skips_our_own_streams(monkeypatch):
+def test_pulse_backend_skips_our_own_streams_and_headphones(monkeypatch):
+    sinks = [
+        {"index": 1, "properties": {"device.bus": "pci"}, "active_port": "[Out] Speaker", "ports": [{"name": "[Out] Speaker", "type": "Speaker"}]},
+        {"index": 2, "properties": {"device.bus": "bluetooth"}},
+        {"index": 3, "properties": {"device.bus": "pci"}, "active_port": "[Out] Headphones", "ports": [{"name": "[Out] Headphones", "type": "Headphones"}]},
+        {"index": 4, "properties": {"device.bus": "usb", "device.form_factor": "headset"}},
+    ]
+    vol = {"front-left": {"value": 65536}, "front-right": {"value": 32768}}
     streams = [
-        {"index": 7, "volume": {"front-left": {"value": 65536}, "front-right": {"value": 32768}}, "properties": {"application.process.id": "1"}},
-        {"index": 8, "volume": {"mono": {"value": 65536}}, "properties": {"application.process.id": str(os.getpid())}},
+        {"index": 7, "sink": 1, "volume": vol, "properties": {"application.process.id": "1"}},
+        {"index": 8, "sink": 1, "volume": {"mono": {"value": 65536}}, "properties": {"application.process.id": str(os.getpid())}},
+        *({"index": 10 + n, "sink": n, "volume": vol, "properties": {}} for n in (2, 3, 4)),
     ]
     calls = []
 
     def run(args, **kw):
         calls.append(args)
-        return subprocess.CompletedProcess(args, 0, json.dumps(streams) if "list" in args else "", "")
+        listed = sinks if args[-1] == "sinks" else streams
+        return subprocess.CompletedProcess(args, 0, json.dumps(listed) if "list" in args else "", "")
     monkeypatch.setattr(subprocess, "run", run)
     saved = ducking._pulse_snapshot()
     ducking._pulse_apply(saved, 0.2)
     ducking._pulse_apply(saved, 1.0)
+    changes = [c for c in calls if "set-sink-input-volume" in c]
     # 0.2 in amplitude is 58% on the cubic pactl scale (-14 dB); 20% there would be -42 dB, nearly silent.
-    assert calls[1] == ["pactl", "set-sink-input-volume", "7", "38326", "19163"]
-    assert calls[2] == ["pactl", "set-sink-input-volume", "7", "65536", "32768"]
-    assert len(calls) == 3
+    assert changes == [
+        ["pactl", "set-sink-input-volume", "7", "38326", "19163"],
+        ["pactl", "set-sink-input-volume", "7", "65536", "32768"],
+    ]
+
+
+def test_mac_lowers_only_running_players(monkeypatch):
+    scripts = []
+
+    def run(args, **kw):
+        script = args[-1]
+        scripts.append(script)
+        out = "80" if "Spotify" in script and "get sound volume" in script else ""
+        return subprocess.CompletedProcess(args, 0, out, "")
+    monkeypatch.setattr(subprocess, "run", run)
+    saved = ducking._mac_snapshot()
+    assert saved == [("Spotify", 80)]
+    ducking._mac_apply(saved, 0.2)
+    assert scripts[-1].endswith('tell application "Spotify" to set sound volume to 16')
+    assert not any("output volume" in s for s in scripts)  # the system volume shows a popup
