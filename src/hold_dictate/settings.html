@@ -13,7 +13,7 @@
   color-scheme: light;
   --paper:#fcfcfb; --surface:#fff; --soft:#f2f2ef; --ink:#0c0c0d; --ink-2:#38383b; --muted:#6a6a6f;
   --line:#e7e7e3; --line-2:#d6d6d1; --track:#cfcfca; --accent:#2a46ff; --on-accent:#fff; --ok:#1f8a4c; --err:#c4202b;
-  --key:#fff; --key-edge:#d6d6d1; --key-shade:#c2c2bc;
+  --key:#fff; --key-edge:#d6d6d1; --key-shade:#c2c2bc; --seg-on:#fff;
   --sans:"Geist",ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
   --mono:"Geist Mono",ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
   --t-xs:12px; --t-sm:13.5px; --t-base:15px; --t-md:17px;
@@ -25,7 +25,7 @@
     color-scheme: dark;
     --paper:#0a0a0b; --surface:#19191c; --soft:#1f1f22; --ink:#ededeb; --ink-2:#c9c9c5; --muted:#9b9ba0;
     --line:#27272b; --line-2:#3a3a3f; --track:#47474d; --accent:#6b80ff; --on-accent:#0a0a0b; --ok:#7fe0a0; --err:#ff6b6b;
-    --key:#26262a; --key-edge:#45454b; --key-shade:#0f0f11;
+    --key:#26262a; --key-edge:#45454b; --key-shade:#0f0f11; --seg-on:#3a3a40;
   }
 }
 * { box-sizing:border-box; }
@@ -57,9 +57,10 @@ code { font:500 .9em var(--mono); background:var(--soft); border:1px solid var(-
 /* the hotkey: the first thing on the page */
 .hero { padding:var(--s-8) 0 var(--s-7); border-bottom:1px solid var(--line); }
 .status { display:inline-flex; align-items:center; gap:8px; font-size:var(--t-sm); color:var(--muted); margin-bottom:var(--s-5); }
-.status i { width:8px; height:8px; border-radius:50%; background:var(--ok); box-shadow:0 0 0 4px color-mix(in srgb, var(--ok) 16%, transparent); }
+.status i { margin-inline-start:4px; flex:none; width:8px; height:8px; border-radius:50%; background:var(--ok); box-shadow:0 0 0 4px color-mix(in srgb, var(--ok) 16%, transparent); }
 .status.warn i { background:var(--err); box-shadow:0 0 0 4px color-mix(in srgb, var(--err) 16%, transparent); }
-.status.warn { color:var(--ink); }
+.status.warn { color:var(--ink); font-weight:500; }
+.status .link { font-weight:400; }
 .keys { display:flex; flex-wrap:wrap; align-items:center; gap:var(--s-3); font-size:clamp(28px, 4.4vw, 40px); font-weight:600; letter-spacing:-.02em; line-height:1.15; }
 .keys .word { color:var(--ink); }
 .cap { display:inline-grid; place-items:center; min-width:1.75em; height:1.6em; padding:0 .45em; border-radius:12px; font:600 .6em var(--sans); letter-spacing:0;
@@ -115,7 +116,7 @@ input[type=number] { width:110px; }
 .seg { display:inline-flex; flex-wrap:wrap; gap:2px; padding:3px; border-radius:var(--r-md); background:var(--soft); border:1px solid var(--line); }
 .seg button { font:inherit; font-size:var(--t-sm); font-weight:500; height:32px; padding:0 var(--s-4); border-radius:7px; border:0; background:none; color:var(--muted); cursor:pointer; }
 .seg button:hover { color:var(--ink); }
-.seg button[aria-pressed=true] { background:var(--surface); color:var(--ink); box-shadow:0 1px 2px rgba(0,0,0,.12), 0 0 0 1px var(--line-2); }
+.seg button[aria-pressed=true] { background:var(--seg-on); color:var(--ink); box-shadow:0 1px 2px rgba(0,0,0,.12), 0 0 0 1px var(--line-2); }
 
 /* switch: a clearly visible track in both modes */
 .switch { appearance:none; flex:none; width:44px; height:26px; margin:0; border-radius:var(--r-pill); background:var(--track); position:relative; cursor:pointer; transition:background .15s; }
@@ -185,7 +186,7 @@ details .items { margin-top:var(--s-6); }
 <div class="banner" id="notRunning" hidden><span>hold-dictate is not running, so the shortcut does nothing yet.</span><button class="btn small primary" id="startSvc">Start it</button></div>
 
 <section class="hero" aria-labelledby="heroKeys">
-  <div class="status" id="status"><i></i><span id="statusText"></span></div>
+  <div class="status" id="status"><i></i><span id="statusText"></span><button class="link" id="statusAct" hidden></button></div>
   <div class="keys" id="heroKeys"></div>
   <p class="lede" id="lede">Hold the keys and speak. Let go, and the text is typed where your cursor is.</p>
   <div class="acts">
@@ -289,7 +290,7 @@ details .items { margin-top:var(--s-6); }
   </div>
 </section>
 
-<footer class="foot"><span>Settings file: <code id="cfgPath"></code></span><span id="ver"></span></footer>
+<footer class="foot"><span>Settings file: <code id="cfgPath"></code></span></footer>
 </div>
 
 <script>
@@ -312,6 +313,7 @@ async function api(path, body) {
   return data;
 }
 $('reload').onclick = () => location.reload();
+$('statusAct').onclick = () => { $('key').scrollIntoView({ block: 'center', behavior: 'smooth' }); $('key').focus({ preventScroll: true }); };
 
 // ---- the save indicator: every change saves at once ----
 let saveTimer;
@@ -353,8 +355,11 @@ function status(s) {
   else if (s.problem) { text = s.problem; warn = true; }
   else if (c.provider !== 'local' && !s.key_hint && !s.key_from_env) { text = 'Add an API key below to start'; warn = true; }
   else if (c.provider === 'local' && !s.local_installed) { text = 'The offline model is not installed yet'; warn = true; }
+  const needKey = s.running && !s.problem && text.startsWith('Add an API key');
   el.classList.toggle('warn', warn);
-  $('statusText').textContent = text;
+  $('statusText').textContent = needKey ? 'No API key yet, so dictation can\'t start.' : text;
+  $('statusAct').hidden = !needKey;
+  $('statusAct').textContent = 'Add one';
 }
 
 function render(s) {
@@ -379,7 +384,6 @@ function render(s) {
   $('local_fallback').checked = c.local_fallback;
   for (const id of ['min_hold', 'timeout', 'prompt', 'base_url', 'model']) if (document.activeElement !== $(id)) $(id).value = c[id];
   $('cfgPath').textContent = s.config_path;
-  $('ver').textContent = 'Version ' + s.version;
   drawPill();
 }
 
@@ -399,7 +403,7 @@ function renderService(s) {
   $('localHelp').hidden = !local;
   $('localHelp').innerHTML = '';
   $('localHelp').append(s.local_installed ? 'Runs on this computer without internet. The first use downloads the model.' : 'The offline model needs one more install. In a terminal, run ', ...(s.local_installed ? [] : [Object.assign(document.createElement('code'), { textContent: 'uv tool install --force "hold-dictate[local]"' })]));
-  $('key').placeholder = s.key_hint ? `Saved key ${s.key_hint}. Paste a new one to replace it.` : s.key_from_env ? 'A key is set in an environment variable.' : 'Paste your key here';
+  $('key').placeholder = s.key_hint ? `Saved key ${s.key_hint}` : s.key_from_env ? 'A key is set in an environment variable.' : 'Paste your key here';
   const help = $('keyHelp'); help.textContent = '';
   if (p && p.keys_url) {
     const a = document.createElement('a'); a.href = p.keys_url; a.target = '_blank'; a.rel = 'noopener'; a.textContent = new URL(p.keys_url).host;
