@@ -390,7 +390,13 @@ function blocker(s) {
   const c = s.config, service = ((s.providers[c.provider] || {}).label || '').replace(/ \(.*/, '');
   if (!reachable) return { title: 'Can\'t reach hold-dictate.', lede: `It may have quit, or it's restarting after an update. Start it again ${where(s)}.${s.running ? ' This page reconnects when it is back.' : ''}` };
   if (!s.running) return { title: 'hold-dictate isn\'t running.', lede: 'Start it, and it also starts every time you log in.', act: 'start' };
-  if (s.problem) return { title: 'The shortcut can\'t work yet.', lede: s.problem };
+  if (s.problem) {
+    // the server's text: a sentence, then indented command lines
+    const [first, ...rest] = s.problem.split('\n'), cmd = rest.map(l => l.trim()).filter(Boolean).join('\n');
+    const keyboard = /keyboard/.test(first);
+    const text = first.replace(/^cannot read the keyboard\.\s*/i, '');
+    return { title: keyboard ? 'hold-dictate can\'t read the keyboard yet.' : 'The shortcut can\'t work yet.', lede: text[0].toUpperCase() + text.slice(1) + (cmd && !text.endsWith(':') ? ' Run this in a terminal:' : ''), code: cmd || undefined };
+  }
   if (c.provider === 'local') return s.local_installed ? null : { title: 'Install the offline model to start.', lede: 'It runs on this computer without internet. Run this in a terminal, then reload this page:', code: 'uv tool install --force "hold-dictate[local]"' };
   if (c.provider === 'custom' && !c.base_url) return { title: 'Add your server\'s address to start.', lede: 'A custom service needs the address of any server that speaks the OpenAI transcription API.', move: 'customRows' };
   if (!s.key_hint && !s.key_from_env) return { title: 'Paste an API key to start dictating.', lede: `hold-dictate sends what you say to a speech service, which turns it into text. You're set up for ${service}${c.provider === 'groq' ? ', which is free' : ''}. You can pick another service below.`, move: 'keyRows' };
@@ -420,6 +426,8 @@ function render(s) {
   status(s);
   $('reopenWhere').textContent = where(s);
   if (!recording) keycaps(c.hotkey.split('+'));
+  if (!recording && s.hotkey_problem) { $('hotkeyMsg').className = 'note bad'; $('hotkeyMsg').textContent = s.hotkey_problem; }
+  else if (!recording && $('hotkeyMsg').classList.contains('bad')) $('hotkeyMsg').textContent = '';
   renderService(s);
   renderLanguages(s);
   document.querySelectorAll('#background_audio button').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.v === c.background_audio)));

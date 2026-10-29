@@ -78,7 +78,8 @@ class SettingsServer:
         self.on_saved = on_saved or (lambda cfg: None)
         self.updater = updater
         self.daemon = daemon
-        self.problem = ""  # set when the hotkey cannot work, shown on the page
+        self.problem = ""  # set when no shortcut can work (the keyboard can't be read), shown on the page
+        self.hotkey_problem = ""  # set when the saved shortcut was invalid and the default is used
         self.token = (daemon and saved_token()) or secrets.token_urlsafe(24)
         self.lock = threading.Lock()
         handler = type("Handler", (_Handler,), {"app": self})
@@ -122,6 +123,7 @@ class SettingsServer:
             "platform": sys.platform,
             "running": self.daemon,
             "problem": self.problem,
+            "hotkey_problem": self.hotkey_problem,
             "config": values,
             "key_hint": f"…{key[-4:]}" if len(key) >= 8 else ("set" if key else ""),
             "key_from_env": bool(cfg.effective_key()) and not key,
