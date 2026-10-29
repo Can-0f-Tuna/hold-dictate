@@ -203,6 +203,10 @@ details .items { margin-top:var(--s-6); }
 .prog { display:block; height:4px; max-width:320px; border-radius:var(--r-pill); background:var(--line); overflow:hidden; }
 .prog i { display:block; height:100%; width:0; border-radius:inherit; background:var(--accent); transition:width .25s ease-out; }
 .gap-top { margin-top:var(--s-3); }
+.tag { display:inline-flex; align-items:center; flex:none; height:22px; padding:0 var(--s-2); border-radius:var(--r-pill); font-size:var(--t-xs); font-weight:500; white-space:nowrap;
+  color:var(--accent); background:color-mix(in srgb, var(--accent) 9%, transparent); border:1px solid color-mix(in srgb, var(--accent) 28%, transparent); }
+.tag.soft { color:var(--muted); background:var(--soft); border-color:var(--line); }
+.group.locked { opacity:.4; user-select:none; } /* signed out: everything waits for the sign-in */
 .foot { padding:var(--s-6) 0 var(--s-8); font-size:var(--t-sm); color:var(--muted); display:flex; flex-wrap:wrap; gap:var(--s-2) var(--s-5); justify-content:space-between; }
 
 @media (max-width:720px) {
@@ -241,6 +245,7 @@ details .items { margin-top:var(--s-6); }
     <p class="note" id="svcMsg"></p>
   </div>
   <button class="btn primary" id="startSvc" hidden>Start hold-dictate</button>
+  <button class="btn primary" id="signIn" hidden>Sign in with Google</button>
   <canvas class="wave" id="wave" aria-hidden="true"></canvas>
 </section>
 
@@ -372,7 +377,24 @@ details .items { margin-top:var(--s-6); }
   </div>
 </section>
 
-<section class="group" aria-labelledby="h-upd">
+<section class="group" id="premGroup" aria-labelledby="h-prem">
+  <header><h2 id="h-prem">Premium</h2><p id="premLine"></p></header>
+  <div class="items">
+    <div class="row"><span class="text"><b>Edit by voice</b><span class="hint">Select text, hold the shortcut and say what to change, like “make it shorter” or “in English”.</span></span><span class="tag prem"></span></div>
+    <div class="row"><span class="text"><b>Writing that fits the app</b><span class="hint">Short and casual in chat, full sentences in email, code words kept as they are in your editor.</span></span><span class="tag prem"></span></div>
+    <div class="row"><span class="text"><b>A dictionary that learns</b><span class="hint">When you fix a word it typed, hold-dictate learns how you spell it. Nothing to type in by hand.</span></span><span class="tag prem"></span></div>
+  </div>
+</section>
+
+<section class="group" id="acctGroup" aria-labelledby="h-acct">
+  <header><h2 id="h-acct">Account</h2><p>Your hold-dictate account.</p></header>
+  <div class="items">
+    <div class="row"><span class="text"><b id="acctName"></b><span class="hint" id="acctMail"></span></span><button class="btn small" id="signOut">Sign out</button></div>
+    <p class="hint">Signing out turns dictation off on this computer until you sign in again.</p>
+  </div>
+</section>
+
+<section class="group" id="updGroup" aria-labelledby="h-upd">
   <header><h2 id="h-upd">Updates</h2><p id="verLine"></p></header>
   <div class="items">
     <label class="row"><span class="text"><b>Install updates automatically</b><span class="hint">New versions install while you're not dictating.</span></span><input type="checkbox" class="switch" id="auto_update"></label>
@@ -420,7 +442,7 @@ async function api(path, body) {
   if (!res.ok) throw new Error(data.error || res.statusText);
   return data;
 }
-const homes = Object.fromEntries(['keyRows', 'customRows', 'startSvc'].map(id => [id, { parent: $(id).parentNode, next: $(id).nextElementSibling }]));
+const homes = Object.fromEntries(['keyRows', 'customRows', 'startSvc', 'signIn'].map(id => [id, { parent: $(id).parentNode, next: $(id).nextElementSibling }]));
 
 // ---- the save indicator: every change saves at once ----
 let saveTimer;
@@ -470,6 +492,7 @@ function retry() { if (!retryTimer) retryTimer = setTimeout(() => { retryTimer =
 function blocker(s) {
   const c = s.config, service = ((s.providers[c.provider] || {}).label || '').replace(/ \(.*/, '');
   if (!reachable) return { title: 'Can\'t reach hold-dictate.', lede: `It may have quit, or it's restarting after an update. Start it again ${where(s)}.${s.running ? ' This page reconnects when it is back.' : ''}` };
+  if (!s.account) return { title: 'Sign in to start.', lede: 'hold-dictate needs a free account. Sign in with Google once, and dictation and the settings below turn on.', act: 'signin' };
   if (!s.running) return { title: 'hold-dictate isn\'t running.', lede: 'Start it, and it also starts every time you log in.', act: 'start' };
   if (s.problem) {
     // the server's text: a sentence, then indented command lines
@@ -490,8 +513,9 @@ function status(s) {
   $('status').classList.toggle('warn', !!b);
   $('statusText').textContent = b ? 'Dictation is off' : '';
   // When dictation can't work, the hero becomes the fix, and the shortcut waits until it is true.
-  $('readyView').hidden = !!b; $('setupView').hidden = !b; $('startSvc').hidden = true;
-  for (const [id, home] of Object.entries(homes)) if ($(id).parentNode !== home.parent && (!b || b.move !== id)) home.parent.insertBefore($(id), home.next);
+  $('readyView').hidden = !!b; $('setupView').hidden = !b; $('startSvc').hidden = $('signIn').hidden = true;
+  for (const [id, home] of Object.entries(homes)) if ($(id).parentNode !== home.parent && (!b || b.move !== id))
+    home.parent.insertBefore($(id), home.next && home.next.parentNode === home.parent ? home.next : $('wave'));
   const slot = $('keySlot');
   [...slot.children].forEach(el => { if (!(el.id in homes)) el.remove(); });
   if (!b) return;
@@ -501,6 +525,18 @@ function status(s) {
   if (b.code) slot.append(Object.assign(document.createElement('code'), { className: 'cmd', textContent: b.code }));
   $('startSvc').hidden = b.act !== 'start';
   if (b.act === 'start') slot.append($('startSvc'));
+  $('signIn').hidden = b.act !== 'signin';
+  if (b.act === 'signin') slot.append($('signIn'));
+}
+
+// ---- the account: signed out, everything but updates waits for the sign-in ----
+function renderAccount(s) {
+  const a = s.account;
+  document.querySelectorAll('section.group').forEach(g => { const lock = !a && g.id !== 'updGroup'; g.inert = lock; g.classList.toggle('locked', lock); });
+  $('acctGroup').hidden = !a; $('save').hidden = !a; // nothing to save until then
+  if (a) { $('acctName').textContent = a.name || a.email; $('acctMail').textContent = a.name ? a.email : ''; }
+  $('premLine').textContent = a && a.premium ? 'Premium is on for your account. These features arrive in the next updates.' : 'Premium isn\'t for sale yet.';
+  document.querySelectorAll('.tag.prem').forEach(t => { t.textContent = a && a.premium ? 'Coming soon' : 'Premium'; t.classList.toggle('soft', !!(a && a.premium)); });
 }
 
 function render(s) {
@@ -512,6 +548,7 @@ function render(s) {
     toggle: 'Tap the keys, speak, and tap them again. The text is typed where your cursor is.' }[c.hotkey_mode] || 'Hold the keys and speak. Let go, and the text is typed where your cursor is.';
   if (!recording && s.hotkey_problem) { $('hotkeyMsg').className = 'note bad'; $('hotkeyMsg').textContent = s.hotkey_problem; }
   else if (!recording && $('hotkeyMsg').classList.contains('bad')) $('hotkeyMsg').textContent = '';
+  renderAccount(s);
   renderService(s);
   renderLanguages(s);
   document.querySelectorAll('#background_audio button').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.v === c.background_audio)));
@@ -845,6 +882,18 @@ $('installUpd').onclick = async () => {
   try { S = await api('/api/update/install', {}); upd = { want, from: S.version, shown: 0, gone: 0, started: Date.now() }; showUpd(`Downloading version ${want}… 0%`, 0); followUpd(); }
   catch (e) { $('updMsg').className = 'note bad'; $('updMsg').textContent = e.message; }
 };
+$('signIn').onclick = async () => {
+  $('signIn').disabled = true;
+  $('svcMsg').className = 'note wait'; $('svcMsg').textContent = 'Opening Google…';
+  try { location.href = (await api('/api/account/signin', {})).url; } // Google sends the browser back to this page
+  catch (e) { $('svcMsg').className = 'note bad'; $('svcMsg').textContent = e.message; $('signIn').disabled = false; }
+};
+$('signOut').onclick = async () => {
+  $('signOut').disabled = true;
+  try { S = await api('/api/account/signout', {}); $('svcMsg').textContent = ''; render(S); scrollTo({ top: 0 }); }
+  catch (e) { saveState('failed', e.message); }
+  finally { $('signOut').disabled = false; }
+};
 $('startSvc').onclick = async () => {
   $('startSvc').disabled = true;
   $('svcMsg').className = 'note wait'; $('svcMsg').textContent = 'Starting…';
@@ -988,6 +1037,8 @@ addEventListener('scroll', floatSave, { passive: true });
 saveState('idle');
 const refresh = () => api('/api/state').then(s => { S = s; render(s); if ($('save').classList.contains('failed')) saveState('idle'); }).catch(() => {}); // the hero and the stale banner already say what went wrong
 if (S) render(S); else refresh();
+// Premium may have been turned on (or the account blocked) since the last daily check
+if (S && S.account) api('/api/account/check', {}).then(s => { S = s; render(s); }).catch(() => {});
 window.addEventListener('focus', () => { if (!recording && !document.activeElement.matches('input[type=text], input[type=password], input[type=number]')) refresh(); });
 </script>
 </body>

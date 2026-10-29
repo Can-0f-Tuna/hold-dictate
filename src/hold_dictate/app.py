@@ -31,8 +31,9 @@ NO_SPEECH_SECONDS = 8.0  # with silence_stop on, a recording where nothing is sa
 
 class Dictation:
     def __init__(self, cfg: Config, feedback: Feedback, recorder_factory=None, paster=None, on_no_key=None, ducker=None,
-                 focus=None, copier=None):
+                 focus=None, copier=None, account=None):
         self.cfg = cfg
+        self.account = account  # None in tests; the app passes its Account, and dictation waits for a sign-in
         self.ducker = ducker or Ducker(cfg)
         self.on_no_key = on_no_key
         self.fb = feedback
@@ -73,6 +74,11 @@ class Dictation:
         self.voice.feed(value, time.monotonic())
 
     def begin(self):
+        if self.account is not None and not self.account.signed_in():
+            self.fb.error("sign in first. The settings page is opening.")
+            if self.on_no_key:
+                self.on_no_key()
+            return
         if self.cfg.provider != "local" and not self.cfg.effective_key():
             self.fb.error("no API key yet. Add one in the settings.")
             if self.on_no_key:
@@ -188,6 +194,7 @@ class Dictation:
 
 def run(cfg: Config) -> int:
     from . import tray
+    from .account import Account
     from .settings_ui import SettingsServer, running_url
     from .updater import Updater
 
@@ -208,7 +215,8 @@ def run(cfg: Config) -> int:
 
     feedback = Feedback(cfg)
     detector = HoldDetector(hotkey)
-    dictation = Dictation(cfg, feedback)
+    account = Account()
+    dictation = Dictation(cfg, feedback, account=account)
     updater = Updater(cfg, notify=feedback.notify, is_idle=dictation.idle)
     feedback.pending_update = lambda: updater.latest if updater.available() and not updater.ready else ""
     updater.on_failed = feedback.update_failed
@@ -220,18 +228,20 @@ def run(cfg: Config) -> int:
         if str(new_hotkey) != str(detector.hotkey) and (detector.set_hotkey(new_hotkey) or dictation.latched):
             dictation.finish()
 
-    server = SettingsServer(cfg, on_saved=on_saved, updater=updater, session=dictation).start()
+    server = SettingsServer(cfg, on_saved=on_saved, updater=updater, session=dictation, account=account).start()
     server.problem, server.hotkey_problem = problem, hotkey_problem
     dictation.on_no_key = server.open
 
     def tick():
         dictation.tick()
         updater.tick()
+        account.tick()
 
     def listen():
         if backend is None:
             while not done.wait(5):
                 updater.tick()
+                account.tick()
             return
         try:
             backend.run(detector, dictation.on_action, tick)
@@ -244,6 +254,9 @@ def run(cfg: Config) -> int:
     if backend:
         print(f"hold-dictate: {'hold' if cfg.hotkey_mode == 'hold' else 'tap'} {hotkey} to dictate ({cfg.provider}, keyboard via {backend.name})", flush=True)
     print(f"hold-dictate: settings at {server.url}", flush=True)
+    if not account.signed_in():
+        print("hold-dictate: sign in on the settings page to start dictating", flush=True)
+        server.open()
     try:
         if tray.available():
             try:

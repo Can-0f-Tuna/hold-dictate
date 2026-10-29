@@ -18,7 +18,7 @@ Windows (PowerShell):
 irm https://hold-dictate.vercel.app/install.ps1 | iex
 ```
 
-The script installs [uv](https://docs.astral.sh/uv/), the system helpers it needs and the latest release of hold-dictate, starts it (and at every login), then opens the settings page in your browser. Add your API key there. Running the script again reinstalls the latest release.
+The script installs [uv](https://docs.astral.sh/uv/), the system helpers it needs and the latest release of hold-dictate, starts it (and at every login), then opens the settings page in your browser. Sign in there with Google (a free account, once per computer), then add your API key. Running the script again reinstalls the latest release.
 
 With an AI coding agent (Claude Code, Codex, Cursor, ...): paste the prompt from [install/agent.md](install/agent.md), also at <https://hold-dictate.vercel.app/agent.md>. The agent installs it, walks you through the key, runs the checks and opens a GitHub issue for anything it can't fix.
 
@@ -28,6 +28,7 @@ Manual install: `uv tool install git+https://github.com/Can-0f-Tuna/hold-dictate
 
 A local page at `http://127.0.0.1:47811` that only this computer can open. Open it from the tray icon next to the clock (Windows), the menu-bar icon (macOS), **hold-dictate settings** in the app menu (Linux), or `hold-dictate settings`. It sets:
 
+- your account: hold-dictate needs a free account, so the page asks you to sign in with Google first, and dictation and the settings stay off until you do. The app then checks the account with the hold-dictate server about once a day; it sends nothing else. The page also lists the Premium features, which aren't for sale yet
 - speech service and API key (with a check that the key works)
 - the model: Automatic uses the one we recommend for that service; **Choose another** lets you pick one
 - the languages you speak (pick as many as you like, for example Hebrew and English), the hotkey (press the keys to record it), and how it works: **hold** to talk (the default), **tap or hold** (a quick tap starts, the next tap stops; holding longer works like hold) or **tap to start and stop**. In the tap modes it can stop by itself after a few seconds of quiet
@@ -45,7 +46,7 @@ Changes apply immediately; no restart needed. Prefer the terminal? `hold-dictate
 hold-dictate checks GitHub every 10 minutes and, while you are not dictating, installs a newer release and restarts itself. Turn this off in the settings. When an update is waiting (automatic updates off, or the install failed), the recording pill on Linux shows a small **!** tab; click it to install, or run `hold-dictate update`. Releases are made by pushing a tag that matches `__version__` in `src/hold_dictate/__init__.py`:
 
 ```sh
-git tag v0.5.3 && git push origin v0.5.3
+git tag v0.6.0 && git push origin v0.6.0
 ```
 
 The Release workflow runs the tests and publishes the GitHub release. Installed copies pick it up within 10 minutes.

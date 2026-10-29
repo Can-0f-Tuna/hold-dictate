@@ -1,4 +1,5 @@
 import json
+import time
 import threading
 from http.server import BaseHTTPRequestHandler, HTTPServer
 
@@ -58,3 +59,12 @@ def isolated_config(tmp_path, monkeypatch):
 def no_real_ducking(monkeypatch):
     """Tests must never turn down the music on the machine running them."""
     monkeypatch.setattr("hold_dictate.ducking.backend", lambda: None)
+
+
+@pytest.fixture(autouse=True)
+def signed_in(isolated_config, tmp_path):
+    """Most tests run signed in; the account tests remove this file to sign out."""
+    path = tmp_path / "cfg" / "account.json"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps({"token": "test-token", "email": "you@example.com", "name": "You", "premium": False, "checked": time.time()}))
+    return path

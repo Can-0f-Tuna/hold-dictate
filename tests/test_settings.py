@@ -11,8 +11,9 @@ from hold_dictate.settings_ui import SettingsServer
 
 
 @pytest.fixture
-def server(tmp_path, monkeypatch):
+def server(tmp_path, monkeypatch, signed_in):
     monkeypatch.setenv("HOLD_DICTATE_CONFIG_DIR", str(tmp_path))
+    (tmp_path / "account.json").write_text(signed_in.read_text())
     saved = []
     s = SettingsServer(Config(api_key="gsk_secret1234"), on_saved=saved.append, port=0).start()
     s.saved = saved

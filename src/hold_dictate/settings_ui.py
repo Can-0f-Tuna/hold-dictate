@@ -9,13 +9,14 @@ import secrets
 import sys
 import threading
 import time
+import urllib.parse
 import urllib.request
 import webbrowser
 from dataclasses import asdict, fields
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
-from . import __version__, config as cfgmod, ducking, textproc
+from . import __version__, account as accountmod, config as cfgmod, ducking, textproc
 from .config import APP_RULES, DUCK_MODES, HOTKEY_MODES, LANGUAGES, LOCAL_MODELS, OVERLAY_STYLES, PROVIDERS, Config
 
 PAGE = Path(__file__).with_name("settings.html")
@@ -37,6 +38,15 @@ code {{ font:500 .9em ui-monospace,Menlo,Consolas,monospace; background:var(--so
 <h1>This settings link has expired.</h1>
 <p>Open the settings again {REOPEN.get("linux" if sys.platform.startswith("linux") else sys.platform, "from the hold-dictate icon next to the clock")}, or run <code>hold-dictate settings</code> in a terminal.</p></main>
 """.encode("utf-8")
+
+
+def auth_page(problem: str) -> bytes:
+    """Shown when a sign-in can't finish. Same look as the expired-link page."""
+    from html import escape
+    return STALE_PAGE.replace(b"This settings link has expired.", b"The sign-in didn't finish.").replace(
+        STALE_PAGE[STALE_PAGE.index(b"<p>"):STALE_PAGE.index(b"</p>") + 4], f"<p>{escape(problem)}</p>".encode("utf-8"))
+
+
 FONTS = {"/fonts/geist.woff2": "geist-latin.woff2", "/fonts/geist-mono.woff2": "geist-mono-latin.woff2"}
 PORT = 47811
 SECRET_FIELDS = {"api_key"}
@@ -73,8 +83,9 @@ def saved_token() -> str:
 class SettingsServer:
     """daemon=True when it runs inside `hold-dictate run`; False for the stand-alone `settings` command."""
 
-    def __init__(self, cfg: Config, on_saved=None, updater=None, daemon: bool = True, port: int = PORT, session=None):
+    def __init__(self, cfg: Config, on_saved=None, updater=None, daemon: bool = True, port: int = PORT, session=None, account=None):
         self.cfg = cfg
+        self.account = account or accountmod.Account()  # nothing works until you sign in
         self.on_saved = on_saved or (lambda cfg: None)
         self.updater = updater
         self.session = session  # the running dictation: last_text, last_app, copy_last(), paste_last()
@@ -123,6 +134,7 @@ class SettingsServer:
         from .paste import can_detect_focus
         return {
             "version": __version__,
+            "account": self.account.public(),
             "platform": sys.platform,
             "running": self.daemon,
             "problem": self.problem,
@@ -152,6 +164,8 @@ class SettingsServer:
     def candidate(self, changes: dict) -> Config:
         """A copy of the current config with the changes applied and checked. Raises ValueError."""
         from .hotkey import parse_hotkey
+        if not self.account.signed_in():
+            raise ValueError("sign in first")
         new = Config(**asdict(self.cfg))
         for name, value in changes.items():
             if name not in EDITABLE:
@@ -222,6 +236,17 @@ class SettingsServer:
             time.sleep(0.25)
         return {"message": message, "url": url}
 
+    def sign_in(self) -> dict:
+        return {"url": self.account.begin(self.port)}
+
+    def sign_out(self) -> dict:
+        self.account.sign_out()
+        return self.state()
+
+    def check_account(self) -> dict:
+        self.account.check(max_age=0, timeout=5)
+        return self.state()
+
     def last(self, action: str) -> dict:
         if not self.session:
             return {"message": "hold-dictate is not running"}
@@ -245,11 +270,12 @@ class _Handler(BaseHTTPRequestHandler):
     def log_message(self, *args):
         pass
 
+    def _host_ok(self) -> bool:
+        # blocks DNS-rebinding pages that point their own name at 127.0.0.1
+        return self.headers.get("Host", "") in (f"127.0.0.1:{self.app.port}", f"localhost:{self.app.port}")
+
     def _allowed(self, token: str) -> bool:
-        host = self.headers.get("Host", "")
-        if host not in (f"127.0.0.1:{self.app.port}", f"localhost:{self.app.port}"):
-            return False  # blocks DNS-rebinding pages that point their own name at 127.0.0.1
-        return secrets.compare_digest(token, self.app.token)
+        return self._host_ok() and secrets.compare_digest(token, self.app.token)
 
     def _send(self, code: int, body: bytes, content_type: str = "application/json"):
         self.send_response(code)
@@ -273,6 +299,18 @@ class _Handler(BaseHTTPRequestHandler):
             state = json.dumps(self.app.state(), ensure_ascii=False).replace("</", "<\\/")
             page = PAGE.read_text(encoding="utf-8").replace("/*STATE*/null", state, 1)
             return self._send(200, page.encode("utf-8"), "text/html; charset=utf-8")
+        if path == "/auth" and self._host_ok():  # the browser, back from Google through the site
+            params = urllib.parse.parse_qs(query)
+            problem = self.app.account.finish(params.get("code", [""])[0], params.get("state", [""])[0])
+            if problem:  # no settings link here: this request carries no proof it came from you
+                return self._send(400, auth_page(problem), "text/html; charset=utf-8")
+            self.send_response(303)
+            self.send_header("Location", f"/?t={self.app.token}")
+            self.send_header("Cache-Control", "no-store")
+            self.send_header("Referrer-Policy", "no-referrer")
+            self.send_header("Content-Length", "0")
+            self.end_headers()
+            return
         if path in FONTS and self._allowed(self.app.token):  # the Host check only: fonts are not private
             return self._send(200, (PAGE.parent / "fonts" / FONTS[path]).read_bytes(), "font/woff2")
         if not self._allowed(self.headers.get("X-Token", "")):
@@ -299,6 +337,9 @@ class _Handler(BaseHTTPRequestHandler):
                 "/api/update/install": lambda: self.app.update("install"),
                 "/api/last/copy": lambda: self.app.last("copy"),
                 "/api/last/paste": lambda: self.app.last("paste"),
+                "/api/account/signin": self.app.sign_in,
+                "/api/account/signout": self.app.sign_out,
+                "/api/account/check": self.app.check_account,
             }
             if self.path not in routes:
                 return self._json({"error": "not found"}, 404)

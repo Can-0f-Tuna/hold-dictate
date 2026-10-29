@@ -121,6 +121,8 @@ def cmd_doctor(_args) -> int:
         line(ducking.available(), "turning other apps down while you dictate", "Linux: install pactl (pulseaudio-utils), or set background_audio = \"off\".")
     tools = missing_tools()
     line(not tools, "paste helpers installed", f"Install: {', '.join(tools)}")
+    from .account import Account
+    line(Account().signed_in(), "signed in to your hold-dictate account", "Run `hold-dictate settings` and click Sign in with Google.")
     if cfg.provider == "local":
         line(LocalTranscriber.available(), "local model library", 'uv tool install --force "hold-dictate[local]"')
     else:

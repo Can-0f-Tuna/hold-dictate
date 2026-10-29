@@ -7,8 +7,9 @@ hold-dictate is voice typing for the whole computer: hold Alt+Space, speak, let 
    - Windows (PowerShell): irm https://hold-dictate.vercel.app/install.ps1 | iex
    The installer installs uv if it is missing, installs the latest release, starts hold-dictate now and at every login, and opens the settings page in my browser. If the hold-dictate command is not found afterwards, open a new shell or add ~/.local/bin to PATH. Run hold-dictate --version to confirm.
 
-2. API key. I do this part myself.
-   Tell me to open https://console.groq.com/keys, sign in, click Create API Key, paste the key into the settings page that just opened and click Check and save. Groq has a free tier. Don't ask me to paste the key into this chat, and never write it to a file, a command line or an issue. If the settings page didn't open, run: hold-dictate settings
+2. Account and API key. I do this part myself.
+   First tell me to click Sign in with Google on the settings page that just opened. hold-dictate needs a free account and stays off until I sign in.
+   Then tell me to open https://console.groq.com/keys, sign in, click Create API Key, paste the key into the settings page and click Check and save. Groq has a free tier. Don't ask me to paste the key into this chat, and never write it to a file, a command line or an issue. If the settings page didn't open, run: hold-dictate settings
    Wait until I say it's saved.
 
 3. Check the setup
