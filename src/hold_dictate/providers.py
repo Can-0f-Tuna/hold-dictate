@@ -1,5 +1,6 @@
 """Speech-to-text backends: any OpenAI-compatible HTTP API, or faster-whisper on this machine."""
 import json
+import re
 import urllib.error
 import urllib.request
 import uuid
@@ -8,6 +9,9 @@ from .audio import SAMPLE_RATE, wav_bytes
 from .config import HEBREW_PROMPT, LANGUAGE_NAMES, LANGUAGES, Config
 
 SAMPLES = {code: sentence for code, _, sentence in LANGUAGES if sentence}
+# Whisper reads only the last 224 tokens of a prompt (Groq, OpenAI and faster-whisper alike). Learned words
+# are added only while the prompt stays under this many UTF-8 bytes, about 3 per token, which leaves room.
+PROMPT_BYTES = 600
 
 
 class TranscribeError(RuntimeError):
@@ -56,7 +60,26 @@ def language_hints(cfg: Config) -> tuple[str, str]:
         parts += [SAMPLES[c] for c in codes if c in SAMPLES and c not in covered]
     if cfg.prompt:
         parts.append(cfg.prompt)
-    return force, " ".join(parts)
+    prompt = " ".join(parts)
+    if getattr(cfg, "premium_learn", False) and getattr(cfg, "learned_terms", ""):
+        prompt = with_terms(prompt, cfg.learned_terms)
+    return force, prompt
+
+
+def with_terms(prompt: str, learned: str) -> str:
+    """The prompt plus the learned words it doesn't have yet, as many as fit in PROMPT_BYTES."""
+    from .premium import terms_of
+    have = prompt.lower()
+    added = []
+    for term in terms_of(learned):
+        if re.search(rf"(?<!\w){re.escape(term.lower())}(?!\w)", have):
+            continue
+        candidate = ", ".join(added + [term]) + "."
+        if len((prompt + " " + candidate).strip().encode("utf-8")) > PROMPT_BYTES:
+            break
+        added.append(term)
+        have += " " + term.lower()
+    return (prompt + " " + ", ".join(added) + ".").strip() if added else prompt
 
 
 def detected_code(name: str) -> str:

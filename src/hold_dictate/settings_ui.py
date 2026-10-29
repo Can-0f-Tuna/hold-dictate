@@ -17,6 +17,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
 from . import __version__, account as accountmod, config as cfgmod, ducking, textproc
+from .premium import MAX_FIXES, MAX_TERMS, MAX_WORD, groq_key, terms_of
 from .config import APP_RULES, DUCK_MODES, HOTKEY_MODES, LANGUAGES, LOCAL_MODELS, OVERLAY_STYLES, PROVIDERS, Config
 
 PAGE = Path(__file__).with_name("settings.html")
@@ -140,6 +141,7 @@ class SettingsServer:
             "problem": self.problem,
             "hotkey_problem": self.hotkey_problem,
             "config": values,
+            "premium": {"groq_key": bool(groq_key(cfg)), "terms": terms_of(cfg.learned_terms)},
             "key_hint": f"…{key[-4:]}" if len(key) >= 8 else ("set" if key else ""),
             "key_from_env": bool(cfg.effective_key()) and not key,
             "providers": {k: {"label": v["label"], "keys_url": v["keys_url"], "model": v["model"], "models": v["models"]} for k, v in PROVIDERS.items()},
@@ -177,7 +179,18 @@ class SettingsServer:
             new.api_key_service = new.provider
         if new.provider not in (*PROVIDERS, "local"):
             raise ValueError("unknown provider")
-        parse_hotkey(new.hotkey)
+        main = parse_hotkey(new.hotkey)
+        if new.edit_hotkey:
+            try:
+                edit = parse_hotkey(new.edit_hotkey)
+            except ValueError as e:
+                raise ValueError(f"edit shortcut: {e}") from None
+            if str(edit) == str(main):
+                raise ValueError("that's the Edit by voice shortcut. Pick another one" if "hotkey" in changes
+                                 else "Edit by voice needs a different shortcut from dictation")
+            new.edit_hotkey = str(edit)
+        new.learned_terms = ", ".join(terms_of(new.learned_terms)[-MAX_TERMS:])
+        new.learned_fixes = dict(list({k: v for k, v in new.learned_fixes.items() if len(k) <= MAX_WORD and len(v) <= MAX_WORD}.items())[-MAX_FIXES:])
         if new.overlay_position not in ("bottom", "top"):
             raise ValueError("position must be bottom or top")
         if new.background_audio not in DUCK_MODES:

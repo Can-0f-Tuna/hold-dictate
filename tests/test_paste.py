@@ -1,4 +1,5 @@
 import os
+import shutil
 import sys
 
 import pytest
@@ -78,3 +79,55 @@ def test_can_detect_focus(tmp_path, monkeypatch):
     (tmp_path / "niri").write_text("#!/bin/sh\n")
     os.chmod(tmp_path / "niri", 0o755)
     assert paste.can_detect_focus()
+
+
+@pytest.fixture
+def board(tmp_path, monkeypatch):
+    """A fake Wayland clipboard: wl-copy and wl-paste keep it in a file; wtype's Ctrl+C copies `selection`."""
+    clip, primary, selection, log = (tmp_path / n for n in ("clip", "primary", "selection", "log"))
+    scripts = {
+        "wl-copy": f'echo "wl-copy $*" >> "{log}"\nif [ "$1" = --clear ]; then : > "{clip}"; elif [ "$1" = -- ]; then printf %s "$2" > "{clip}"; else cat > "{clip}"; fi',
+        "wl-paste": f'if [ "$4" = --primary ]; then f="{primary}"; else f="{clip}"; fi\n[ -s "$f" ] || exit 1\ncat "$f"',
+        "wtype": f'echo "wtype $*" >> "{log}"\ncase "$*" in *" c "*) cp "{selection}" "{clip}";; esac',
+    }
+    for name, body in scripts.items():
+        (tmp_path / name).write_text("#!/bin/sh\n" + body + "\n")
+        (tmp_path / name).chmod(0o755)
+    for f in (clip, primary, selection):
+        f.write_text("")
+    for tool in ("cat", "cp"):
+        (tmp_path / tool).symlink_to(shutil.which(tool))
+    monkeypatch.setenv("PATH", str(tmp_path))
+    monkeypatch.setenv("WAYLAND_DISPLAY", "wayland-1")
+    return clip, primary, selection, log
+
+
+def test_grab_selection_copies_then_restores_the_clipboard(board):
+    clip, primary, selection, log = board
+    clip.write_text("what you had copied")
+    selection.write_text("the selected words")
+    text, restore = paste.grab_selection("firefox")
+    assert text == "the selected words"
+    assert "wtype -M ctrl c -m ctrl" in log.read_text()
+    restore()
+    assert clip.read_text() == "what you had copied"
+    assert paste.clipboard_text() == "what you had copied"
+
+
+def test_grab_selection_nothing_selected_and_terminals(board, monkeypatch):
+    clip, primary, selection, log = board
+    monkeypatch.setattr(paste.time, "sleep", lambda s: None)
+    clip.write_text("kept")
+    text, restore = paste.grab_selection("kitty")  # a terminal copies with Ctrl+Shift+C
+    assert text == "" and "wtype -M ctrl -M shift c -m shift -m ctrl" in log.read_text()
+    restore()
+    assert clip.read_text() == "kept"
+
+
+def test_grab_selection_unknown_app_reads_the_primary_selection(board):
+    clip, primary, selection, log = board
+    primary.write_text("selected in a terminal")
+    clip.write_text("kept")
+    text, restore = paste.grab_selection("")  # GNOME or KDE on Wayland: no Ctrl+C that could stop a program
+    restore()
+    assert text == "selected in a terminal" and not log.exists() and clip.read_text() == "kept"

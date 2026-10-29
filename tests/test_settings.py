@@ -273,3 +273,41 @@ def test_last_dictation_with_session(tmp_path, monkeypatch):
         assert done == ["copy", "paste"]
     finally:
         s.stop()
+
+
+def test_edit_shortcut_is_checked_and_must_differ(server):
+    code, state = call(server, "/api/config", {"edit_hotkey": "Ctrl+Shift+E"})
+    assert code == 200 and state["config"]["edit_hotkey"] == "ctrl+shift+e"  # written the usual way
+    code, body = call(server, "/api/config", {"edit_hotkey": "alt+space"})
+    assert code == 400 and "different shortcut" in body["error"]
+    code, body = call(server, "/api/config", {"hotkey": "ctrl+shift+e"})
+    assert code == 400 and "Edit by voice shortcut" in body["error"]
+    for bad in ("space", "alt+pageup", "shift+"):
+        code, body = call(server, "/api/config", {"edit_hotkey": bad})
+        assert code == 400 and body["error"].startswith("edit shortcut")
+    code, state = call(server, "/api/config", {"edit_hotkey": ""})
+    assert code == 200 and state["config"]["edit_hotkey"] == ""  # off
+    assert server.cfg.edit_hotkey == ""
+
+
+def test_premium_switches_and_the_learned_lists(server, tmp_path):
+    server.cfg.learned_terms, server.cfg.learned_fixes = "Kubernetes, Vercel", {"get hub": "GitHub", "versal": "Vercel"}
+    code, state = call(server, "/api/state")
+    assert state["premium"] == {"groq_key": True, "terms": ["Kubernetes", "Vercel"]}
+    code, state = call(server, "/api/config", {"premium_style": True, "premium_learn": True, "learned_terms": "Kubernetes",
+                                                "learned_fixes": {"get hub": "GitHub"}})
+    assert code == 200 and state["config"]["premium_style"] and state["config"]["premium_learn"]
+    assert state["premium"]["terms"] == ["Kubernetes"] and state["config"]["learned_fixes"] == {"get hub": "GitHub"}
+    saved = config.load(tmp_path / "config.toml")
+    assert saved.learned_terms == "Kubernetes" and saved.learned_fixes == {"get hub": "GitHub"} and saved.premium_style
+    assert call(server, "/api/config", {"premium_style": "yes"})[0] == 400
+    assert call(server, "/api/config", {"learned_fixes": ["nope"]})[0] == 400
+    code, state = call(server, "/api/config", {"learned_terms": " a, A, b ,, c", "learned_fixes": {"x" * 61: "y", "ok": "fine"}})
+    assert state["config"]["learned_terms"] == "a, b, c" and state["config"]["learned_fixes"] == {"ok": "fine"}
+    code, state = call(server, "/api/config", {"learned_terms": "", "learned_fixes": {}})  # Forget everything
+    assert state["premium"]["terms"] == [] and state["config"]["learned_fixes"] == {}
+
+
+def test_no_groq_key_is_reported(server):
+    code, state = call(server, "/api/config", {"provider": "openai"})
+    assert state["premium"]["groq_key"] is False

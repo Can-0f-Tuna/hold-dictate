@@ -150,8 +150,12 @@ def clean(text: str, cfg) -> str:
     text = text.strip()
     if not text or (cfg.drop_hallucinations and is_hallucination(text)):
         return ""
-    if cfg.word_overrides:
-        text = apply_overrides(text, cfg.word_overrides)
+    overrides = cfg.word_overrides
+    if getattr(cfg, "premium_learn", False) and getattr(cfg, "learned_fixes", None):
+        from .premium import merged_fixes
+        overrides = merged_fixes(cfg.learned_fixes, overrides)
+    if overrides:
+        text = apply_overrides(text, overrides)
     if cfg.remove_fillers:
         text = remove_fillers(text, filler_list(cfg.filler_words))
     if cfg.spoken_punctuation:

@@ -154,6 +154,7 @@ class Config:
     languages: str = ""  # the languages you speak, comma-separated codes such as "he,en"; empty = any language
     prompt: str = ""  # optional spelling hint: words and names the transcriber should spell your way
     hotkey: str = "alt+space"
+    edit_hotkey: str = "alt+shift+space"  # Premium: hold it over selected text and say what to change; empty = off
     hotkey_mode: str = "hold"  # hold | auto | toggle
     silence_stop: float = 0.0  # auto and toggle: stop after this many seconds of quiet once you spoke; 0 = off
     local_model: str = "small"  # faster-whisper model name or Hugging Face repo; "small" is Automatic
@@ -177,6 +178,10 @@ class Config:
     auto_submit: bool = False  # press Enter after every paste (per-app rules can say otherwise)
     app_rules: dict = field(default_factory=dict)  # app name -> paste | submit | shift | clipboard | off
     post_hook: str = ""  # shell command: gets the text on stdin, its output is pasted; exit 77 pastes nothing
+    premium_style: bool = False  # Premium: writing that fits the app the text goes to
+    premium_learn: bool = False  # Premium: a dictionary that learns from what you dictate and the words you fix
+    learned_terms: str = ""  # comma-separated words and names it learned; added to the spelling hint
+    learned_fixes: dict = field(default_factory=dict)  # heard -> written, learned; your word_overrides win
 
     def preset(self) -> dict:
         return PROVIDERS.get(self.provider, PROVIDERS["custom"])

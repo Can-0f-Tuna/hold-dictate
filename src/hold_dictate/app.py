@@ -4,7 +4,7 @@ import sys
 import threading
 import time
 
-from . import audio, paste, textproc
+from . import audio, config as cfgmod, paste, premium as premiummod, textproc
 from .ducking import Ducker
 from .config import Config
 from .feedback import Feedback
@@ -31,7 +31,7 @@ NO_SPEECH_SECONDS = 8.0  # with silence_stop on, a recording where nothing is sa
 
 class Dictation:
     def __init__(self, cfg: Config, feedback: Feedback, recorder_factory=None, paster=None, on_no_key=None, ducker=None,
-                 focus=None, copier=None, account=None):
+                 focus=None, copier=None, account=None, grab=None, clipboard=None, premium=None, save_settings=None):
         self.cfg = cfg
         self.account = account  # None in tests; the app passes its Account, and dictation waits for a sign-in
         self.ducker = ducker or Ducker(cfg)
@@ -42,6 +42,14 @@ class Dictation:
         self.paster = paster or paste.paste_text
         self.focus = focus or paste.focused_app
         self.copier = copier or paste.copy_text
+        self.grab = grab or paste.grab_selection  # app -> (selected text, put the clipboard back)
+        self.clipboard = clipboard or paste.clipboard_text
+        self.premium = premium or premiummod.Client(cfg, account)
+        self.save_settings = save_settings or self._save_in_memory  # the app saves through the settings server
+        self.learner = premiummod.Learner(cfg, self.premium, self._save_learned)
+        self.keys_up = lambda: True  # the app waits here until the shortcut's keys are let go
+        self.which = ""  # what the recording is for: "" dictation, "edit" edit by voice
+        self.watch = ""  # the last pasted dictation, compared once with the clipboard to spot your corrections
         self.recorder = None
         self.latched = False  # auto and toggle: the key is up but the recording goes on
         self.voice = audio.VoiceMeter()
@@ -53,13 +61,18 @@ class Dictation:
         self.paste_lock = threading.Lock()
         self.threads: list[threading.Thread] = []
 
-    # Called by the hotkey backend: "start" when the hotkey goes down, "stop" when it comes up.
+    # Called by the hotkey backend: "start" when the hotkey goes down, "stop" when it comes up, and
+    # "edit:start" and "edit:stop" for the edit-by-voice hotkey.
     def on_action(self, action: str):
+        which, _, action = action.rpartition(":")
         with self.lock:
             mode = self.cfg.hotkey_mode
             if action == "start":
+                self._check_correction()
                 if self.recorder is None:
-                    self.begin()
+                    if which == "edit" and not self._edit_allowed():
+                        return
+                    self.begin(which)
                 elif mode != "hold":
                     self.finish()
             elif action == "stop" and self.recorder is not None:
@@ -73,7 +86,14 @@ class Dictation:
         self.fb.level(value)
         self.voice.feed(value, time.monotonic())
 
-    def begin(self):
+    def _edit_allowed(self) -> bool:
+        problem = self.premium.problem()
+        if problem and (self.account is None or self.account.signed_in()):  # signed out: begin() says so
+            self.fb.error("Edit by voice is a Premium feature." if problem == premiummod.PREMIUM_ONLY else problem)
+            return False
+        return True
+
+    def begin(self, which: str = ""):
         if self.account is not None and not self.account.signed_in():
             self.fb.error("sign in first. The settings page is opening.")
             if self.on_no_key:
@@ -90,7 +110,7 @@ class Dictation:
         except audio.MicError as e:
             self.fb.error(str(e))
             return
-        self.latched = False
+        self.latched, self.which = False, which
         self.fb.recording()
         self.ducker.duck()
         self.pressed_at = self.last_used = time.monotonic()
@@ -122,7 +142,7 @@ class Dictation:
                 self.fb.done()
                 return
             self.fb.working()
-            worker = threading.Thread(target=self.process, args=(recording,), daemon=True)
+            worker = threading.Thread(target=self.process_edit if self.which == "edit" else self.process, args=(recording,), daemon=True)
             worker.start()
             self.threads.append(worker)
 
@@ -140,10 +160,14 @@ class Dictation:
         self.last_used = time.monotonic()
         text = textproc.clean(raw, self.cfg)
         print(f"transcribed ({source}) in {self.last_used - started:.1f}s: {raw!r}" + (f" -> {text!r}" if text != raw.strip() else ""), flush=True)
-        self.fb.done()
         if not text:
+            self.fb.done()
             return
         app = self.focus()
+        dictated = text
+        if self.cfg.premium_style and not self.premium.problem():
+            text = self._styled(text, app)
+        self.fb.done()
         if self.cfg.post_hook.strip():
             text = textproc.run_hook(self.cfg.post_hook, text, {"HOLD_DICTATE_APP": app, "HOLD_DICTATE_PROVIDER": source})
             if not text:
@@ -151,6 +175,77 @@ class Dictation:
                 return
         self.last_text, self.last_app = text, app
         self.deliver(text, app)
+        if self.learner.enabled():
+            self.watch = text
+            self.learner.add(dictated)  # sent in the background, at most once a minute
+
+    def _styled(self, text: str, app: str) -> str:
+        """The text rewritten to fit the app; on any failure the text as dictated: a dictation is never lost."""
+        try:
+            styled = self.premium.style(text, app)
+            return styled.strip() or text
+        except Exception as e:
+            reason = str(e) if isinstance(e, premiummod.PremiumError) else type(e).__name__
+            print(f"hold-dictate: pasting the text as dictated ({reason})", file=sys.stderr, flush=True)
+            return text
+
+    def process_edit(self, recording):
+        """Edit by voice: the selected text, changed the way you said, pasted over the selection."""
+        started = time.monotonic()
+        app = self.focus()
+        self.keys_up()  # a copy shortcut pressed while Alt and Shift are still down would be another shortcut
+        with self.paste_lock:
+            selected, restore = self.grab(app)
+        if not selected.strip():
+            restore()
+            self.fb.error("Select some text first.")
+            return
+        try:
+            speech = audio.speech_only(recording)
+            raw, source = ("", "-") if speech is None else self.transcribe(speech)
+            instruction = textproc.clean(raw, self.cfg)
+            if not instruction:
+                restore()
+                self.fb.done()
+                return
+            result = self.premium.edit(selected, instruction, app)
+            if not result.strip():
+                raise premiummod.PremiumError("The server sent back no text, so the selection is left as it was.")
+        except Exception as e:
+            restore()
+            self.fb.error(str(e))
+            return
+        self.last_used = time.monotonic()
+        print(f"edited by voice ({source}) in {self.last_used - started:.1f}s", flush=True)  # never the text
+        self.fb.done()
+        rule = paste.rule_for(self.cfg.app_rules, app)
+        self.deliver(result, app, submit_allowed=False)
+        if rule != "clipboard":  # copy-only leaves the result on the clipboard for you to paste
+            restore()
+
+    # ---------- a dictionary that learns ----------
+
+    def _check_correction(self):
+        """At the next press after a dictation, looks once at the clipboard: a copied, corrected version
+        of what was pasted tells which words were wrong."""
+        last, self.watch = self.watch, ""
+        if not last or not self.learner.enabled():
+            return
+
+        def run():
+            copied = self.clipboard()
+            fixed = premiummod.corrections(last, copied) if copied else []
+            if fixed:
+                self.learner.add(fixed=fixed)
+        threading.Thread(target=run, daemon=True).start()
+
+    def _save_learned(self, terms: list, fixes: dict):
+        self.save_settings({"learned_terms": ", ".join(terms), "learned_fixes": fixes})
+
+    def _save_in_memory(self, changes: dict):
+        with self.lock:
+            for name, value in changes.items():
+                setattr(self.cfg, name, cfgmod.coerce(name, value))
 
     def deliver(self, text: str, app: str, submit_allowed: bool = True):
         rule = paste.rule_for(self.cfg.app_rules, app)
@@ -213,10 +308,21 @@ def run(cfg: Config) -> int:
         cfg.hotkey = Config().hotkey  # otherwise every save on the settings page would fail on it
         hotkey = parse_hotkey(cfg.hotkey)
 
+    edit_hotkey = None
+    if cfg.edit_hotkey.strip():
+        try:
+            edit_hotkey = parse_hotkey(cfg.edit_hotkey)
+            if str(edit_hotkey) == str(hotkey):
+                raise ValueError("it is the same as the dictation shortcut")
+        except ValueError as e:  # turned off for now, so the settings page can still save
+            print(f"hold-dictate: the edit-by-voice shortcut {cfg.edit_hotkey!r} doesn't work ({e}); it is off for now", file=sys.stderr, flush=True)
+            cfg.edit_hotkey, edit_hotkey = "", None
+
     feedback = Feedback(cfg)
-    detector = HoldDetector(hotkey)
+    detector = HoldDetector(hotkey, edit_hotkey)
     account = Account()
     dictation = Dictation(cfg, feedback, account=account)
+    dictation.keys_up = lambda: detector.wait_released(1.0)
     updater = Updater(cfg, notify=feedback.notify, is_idle=dictation.idle)
     feedback.pending_update = lambda: updater.latest if updater.available() and not updater.ready else ""
     updater.on_failed = feedback.update_failed
@@ -227,10 +333,14 @@ def run(cfg: Config) -> int:
         server.hotkey_problem = ""  # a saved shortcut is always a valid one
         if str(new_hotkey) != str(detector.hotkey) and (detector.set_hotkey(new_hotkey) or dictation.latched):
             dictation.finish()
+        new_edit = parse_hotkey(new_cfg.edit_hotkey) if new_cfg.edit_hotkey else None
+        if str(new_edit) != str(detector.edit) and (detector.set_edit_hotkey(new_edit) or (dictation.latched and dictation.which == "edit")):
+            dictation.finish()
 
     server = SettingsServer(cfg, on_saved=on_saved, updater=updater, session=dictation, account=account).start()
     server.problem, server.hotkey_problem = problem, hotkey_problem
     dictation.on_no_key = server.open
+    dictation.save_settings = server.save  # under the server's lock, on top of the settings as they are then
 
     def tick():
         dictation.tick()

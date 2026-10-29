@@ -206,6 +206,18 @@ details .items { margin-top:var(--s-6); }
 .tag { display:inline-flex; align-items:center; flex:none; height:22px; padding:0 var(--s-2); border-radius:var(--r-pill); font-size:var(--t-xs); font-weight:500; white-space:nowrap;
   color:var(--accent); background:color-mix(in srgb, var(--accent) 9%, transparent); border:1px solid color-mix(in srgb, var(--accent) 28%, transparent); }
 .tag.soft { color:var(--muted); background:var(--soft); border-color:var(--line); }
+/* Premium: the controls show only for a Premium account; the shortcut uses the hero's keycaps, smaller */
+#premGroup:not(.on) .prem-on { display:none; }
+#premGroup.on .tag.prem { display:none; }
+.keys.mini { font-size:30px; gap:var(--s-2) var(--s-3); min-height:31px; }
+.keys.mini .cap { margin-bottom:3px; border-radius:var(--r-md);
+  box-shadow:inset 0 1px 0 var(--key-hi), 0 3px 0 -1px var(--key-shade), 0 3px 0 0 var(--key-edge), 0 14px 20px -14px var(--key-glow); }
+.keys.mini .cap.down { transform:translateY(2px); box-shadow:inset 0 1px 0 var(--key-hi), 0 1px 0 -1px var(--key-shade), 0 1px 0 0 var(--key-edge), 0 8px 12px -10px var(--key-glow); }
+.keys.mini .word { font-size:var(--t-base); font-weight:400; color:var(--muted); letter-spacing:0; }
+.learned { gap:0; max-height:320px; overflow:auto; border-top:1px solid var(--line); }
+.learned .pair { min-height:40px; border-bottom:1px solid var(--line); padding-inline-start:var(--s-1); }
+.learned .pair > span { min-width:0; overflow-wrap:anywhere; }
+.learned .pair > span:nth-last-child(2) { flex:1; } /* the last word takes the room, so the × sits at the end */
 .group.locked { opacity:.4; user-select:none; } /* signed out: everything waits for the sign-in */
 .foot { padding:var(--s-6) 0 var(--s-8); font-size:var(--t-sm); color:var(--muted); display:flex; flex-wrap:wrap; gap:var(--s-2) var(--s-5); justify-content:space-between; }
 
@@ -380,9 +392,24 @@ details .items { margin-top:var(--s-6); }
 <section class="group" id="premGroup" aria-labelledby="h-prem">
   <header><h2 id="h-prem">Premium</h2><p id="premLine"></p></header>
   <div class="items">
-    <div class="row"><span class="text"><b>Edit by voice</b><span class="hint">Select text, hold the shortcut and say what to change, like “make it shorter” or “in English”.</span></span><span class="tag prem"></span></div>
-    <div class="row"><span class="text"><b>Writing that fits the app</b><span class="hint">Short and casual in chat, full sentences in email, code words kept as they are in your editor.</span></span><span class="tag prem"></span></div>
-    <div class="row"><span class="text"><b>A dictionary that learns</b><span class="hint">When you fix a word it typed, hold-dictate learns how you spell it. Nothing to type in by hand.</span></span><span class="tag prem"></span></div>
+    <p class="note bad" id="premKey" hidden>Premium features use a Groq key. Switch the service to Groq, or set GROQ_API_KEY.</p>
+    <div class="item">
+      <div class="row"><span class="text"><b>Edit by voice</b><span class="hint">Select text, hold the shortcut and say what to change, like “make it shorter” or “in English”.</span></span><span class="tag prem"></span></div>
+      <div class="item prem-on" id="editBox">
+        <div class="keys mini" id="editKeys" aria-label="Edit by voice shortcut"></div>
+        <div class="acts-start"><button class="btn small" id="recEdit">Change</button><button class="link" id="editOff">Turn off</button><span class="note" id="editMsg"></span></div>
+      </div>
+    </div>
+    <label class="row"><span class="text"><b>Writing that fits the app</b><span class="hint">Short and casual in chat, full sentences in email, code words kept as they are in your editor.</span></span><span class="tag prem"></span><input type="checkbox" class="switch prem-on" id="premium_style"></label>
+    <div class="item">
+      <label class="row"><span class="text"><b>A dictionary that learns</b><span class="hint">When you fix a word it typed, hold-dictate learns how you spell it. Nothing to type in by hand.</span></span><span class="tag prem"></span><input type="checkbox" class="switch prem-on" id="premium_learn"></label>
+      <div class="item prem-on" id="learnBox">
+        <span class="label" id="l-learned">Learned so far</span>
+        <div class="pairs learned" id="learnRows" role="list" aria-labelledby="l-learned"></div>
+        <p class="hint" id="learnEmpty">Nothing yet. It learns from what you dictate and from the words you correct and copy.</p>
+        <div><button class="link" id="forget">Forget everything</button></div>
+      </div>
+    </div>
   </div>
 </section>
 
@@ -467,11 +494,13 @@ function saveSoon(id, value) { clearTimeout(debounced[id]); debounced[id] = setT
 
 // ---- drawing the state ----
 const pretty = p => ({ alt: MAC ? 'Option' : 'Alt', ctrl: 'Ctrl', shift: 'Shift', super: MAC ? 'Cmd' : 'Win', space: 'Space' }[p] || p.toUpperCase());
-function keycaps(parts, tail) {
-  const el = $('heroKeys'); el.innerHTML = '';
+function keycaps(parts, tail, el = $('heroKeys')) {
+  el.innerHTML = '';
+  const hero = el.id === 'heroKeys'; // the edit shortcut has the keys alone
   const word = t => { const s = document.createElement('span'); s.className = 'word'; s.textContent = t; return s; };
   const mode = S ? S.config.hotkey_mode : 'hold';
-  el.append(word({ auto: 'Tap or hold', toggle: 'Tap' }[mode] || 'Hold'));
+  if (hero) el.append(word({ auto: 'Tap or hold', toggle: 'Tap' }[mode] || 'Hold'));
+  if (!hero && !parts.length && !tail) { el.append(word('Off')); return; }
   parts.forEach((p, i) => {
     const c = document.createElement('kbd'); c.className = 'cap'; c.textContent = pretty(p);
     if (!i) { el.append(c); return; }
@@ -481,7 +510,7 @@ function keycaps(parts, tail) {
     pair.append(plus, c); el.append(pair);
   });
   if (tail) { const g = document.createElement('span'); g.className = 'ghost'; g.textContent = tail; el.append(g); }
-  else el.append(word(mode === 'toggle' ? 'to start and stop.' : 'and talk.'));
+  else if (hero) el.append(word(mode === 'toggle' ? 'to start and stop.' : 'and talk.'));
 }
 
 const where = s => s.platform.startsWith('linux') ? 'from your app menu (hold-dictate settings)' : s.platform === 'darwin' ? 'from the hold-dictate icon in the menu bar' : 'from the hold-dictate icon next to the clock';
@@ -535,15 +564,47 @@ function renderAccount(s) {
   document.querySelectorAll('section.group').forEach(g => { const lock = !a && g.id !== 'updGroup'; g.inert = lock; g.classList.toggle('locked', lock); });
   $('acctGroup').hidden = !a; $('save').hidden = !a; // nothing to save until then
   if (a) { $('acctName').textContent = a.name || a.email; $('acctMail').textContent = a.name ? a.email : ''; }
-  $('premLine').textContent = a && a.premium ? 'Premium is on for your account. These features arrive in the next updates.' : 'Premium isn\'t for sale yet.';
-  document.querySelectorAll('.tag.prem').forEach(t => { t.textContent = a && a.premium ? 'Coming soon' : 'Premium'; t.classList.toggle('soft', !!(a && a.premium)); });
+  const on = !!(a && a.premium);
+  $('premGroup').classList.toggle('on', on);
+  $('premLine').textContent = on ? 'Premium is on for your account. The text involved goes through the hold-dictate server to Groq, with your own key.' : 'Premium isn\'t for sale yet.';
+  document.querySelectorAll('.tag.prem').forEach(t => { t.textContent = 'Premium'; });
+  if (on) renderPremium(s);
 }
+
+// ---- Premium: edit by voice, writing that fits the app, a dictionary that learns ----
+function renderPremium(s) {
+  const c = s.config;
+  $('premKey').hidden = s.premium.groq_key;
+  if (recording !== 'edit_hotkey') keycaps(c.edit_hotkey ? c.edit_hotkey.split('+') : [], '', $('editKeys'));
+  $('editOff').hidden = !c.edit_hotkey || recording === 'edit_hotkey';
+  if (recording !== 'edit_hotkey') $('recEdit').textContent = c.edit_hotkey ? 'Change' : 'Choose a shortcut';
+  $('premium_style').checked = c.premium_style; $('premium_learn').checked = c.premium_learn;
+  const terms = s.premium.terms, fixes = Object.entries(c.learned_fixes), box = $('learnRows');
+  $('learnBox').hidden = !c.premium_learn && !terms.length && !fixes.length;
+  $('learnEmpty').hidden = !!(terms.length || fixes.length); $('forget').hidden = !$('learnEmpty').hidden;
+  keepFocus(box, () => { box.textContent = '';
+  const row = (k, cells, drop) => {
+    const r = document.createElement('div'); r.className = 'pair'; r.setAttribute('role', 'listitem');
+    for (const [cls, text] of cells) r.append(Object.assign(document.createElement('span'), { className: cls, textContent: text, dir: cls ? '' : 'auto' }));
+    const x = Object.assign(document.createElement('button'), { className: 'btn icon', innerHTML: ICON_X, title: 'Remove' });
+    x.dataset.k = k; x.setAttribute('aria-label', `Remove ${cells.map(c => c[1]).join(' ')}`);
+    x.onclick = () => { const next = r.nextElementSibling || r.previousElementSibling; if (next) next.querySelector('button').focus(); drop(); };
+    r.append(x); box.append(r);
+  };
+  for (const [heard, written] of fixes) row('f:' + heard, [['', heard], ['to', '→'], ['', written || '(deleted)']], () => {
+    const v = { ...S.config.learned_fixes }; delete v[heard]; save({ learned_fixes: v }); });
+  for (const term of terms) row('t:' + term, [['', term]], () => save({ learned_terms: S.premium.terms.filter(t => t !== term).join(', ') }));
+  });
+}
+for (const id of ['premium_style', 'premium_learn']) $(id).addEventListener('change', () => save({ [id]: $(id).checked }));
+$('editOff').onclick = () => save({ edit_hotkey: '' });
+$('forget').onclick = () => { if (confirm('Forget every word and fix the dictionary learned?')) save({ learned_terms: '', learned_fixes: {} }); };
 
 function render(s) {
   const c = s.config;
   status(s);
   $('reopenWhere').textContent = where(s);
-  if (!recording) keycaps(c.hotkey.split('+'));
+  if (recording !== 'hotkey') keycaps(c.hotkey.split('+'));
   $('heroLede').textContent = { auto: 'Tap the keys to start and tap again to stop, or hold them and let go when you\'re done. The text is typed where your cursor is.',
     toggle: 'Tap the keys, speak, and tap them again. The text is typed where your cursor is.' }[c.hotkey_mode] || 'Hold the keys and speak. Let go, and the text is typed where your cursor is.';
   if (!recording && s.hotkey_problem) { $('hotkeyMsg').className = 'note bad'; $('hotkeyMsg').textContent = s.hotkey_problem; }
@@ -684,30 +745,39 @@ for (const id of ['beeps', 'auto_update', 'local_fallback', 'drop_hallucinations
 for (const id of ['hotkey_mode', 'background_audio', 'overlay_style', 'overlay_position']) document.querySelectorAll(`#${id} button`).forEach(b => b.onclick = () => save({ [id]: b.dataset.v }));
 
 // ---- shortcut recorder ----
-let recording = false;
+// Two shortcuts use it: the hero's (hotkey) and Edit by voice's (edit_hotkey).
+let recording = false; // the field being recorded, or false
+const REC = { hotkey: { keys: 'heroKeys', btn: 'recKey', msg: 'hotkeyMsg' }, edit_hotkey: { keys: 'editKeys', btn: 'recEdit', msg: 'editMsg' } };
 function stopRec(message) {
-  recording = false; $('heroKeys').classList.remove('rec'); $('recKey').textContent = 'Change shortcut';
-  $('hotkeyMsg').className = 'note'; $('hotkeyMsg').textContent = message || '';
+  const r = REC[recording || 'hotkey'];
+  recording = false; $(r.keys).classList.remove('rec');
+  $(r.msg).className = 'note'; $(r.msg).textContent = message || '';
+  $('recKey').textContent = 'Change shortcut';
   render(S);
 }
-$('recKey').onclick = () => {
-  if (recording) return stopRec();
-  recording = true; $('heroKeys').classList.add('rec'); keycaps([], 'press the new keys…'); $('recKey').textContent = 'Cancel';
-  $('hotkeyMsg').className = 'note wait'; $('hotkeyMsg').textContent = 'A modifier (Alt, Ctrl, Shift, ' + (MAC ? 'Cmd' : 'Win') + ') plus a letter, digit, Space or F-key. Esc cancels.';
-};
+function startRec(field) {
+  if (recording) { const same = recording === field; stopRec(); if (same) return; }
+  const r = REC[field];
+  recording = field; $(r.keys).classList.add('rec'); if (field === 'edit_hotkey') $('editOff').hidden = true; keycaps([], 'press the new keys…', $(r.keys)); $(r.btn).textContent = 'Cancel';
+  $(r.msg).className = 'note wait'; $(r.msg).textContent = 'A modifier (Alt, Ctrl, Shift, ' + (MAC ? 'Cmd' : 'Win') + ') plus a letter, digit, Space or F-key. Esc cancels.';
+}
+$('recKey').onclick = () => startRec('hotkey');
+$('recEdit').onclick = () => startRec('edit_hotkey');
 function pressKeys(e) {
   if (recording || !S) return;
   const held = { alt: e.altKey, ctrl: e.ctrlKey, shift: e.shiftKey, super: e.metaKey };
-  const parts = S.config.hotkey.split('+');
-  document.querySelectorAll('#heroKeys .cap').forEach((cap, i) => {
-    const part = parts[i];
-    const down = part in held ? held[part] : e.type === 'keydown' && (e.code === 'Space' ? 'space' : e.code.replace(/^Key|^Digit/, '').toLowerCase()) === part;
-    cap.classList.toggle('down', !!down);
-  });
+  for (const [field, r] of Object.entries(REC)) {
+    const parts = (S.config[field] || '').split('+');
+    document.querySelectorAll(`#${r.keys} .cap`).forEach((cap, i) => {
+      const part = parts[i];
+      const down = part in held ? held[part] : e.type === 'keydown' && (e.code === 'Space' ? 'space' : e.code.replace(/^Key|^Digit/, '').toLowerCase()) === part;
+      cap.classList.toggle('down', !!down);
+    });
+  }
 }
 window.addEventListener('keydown', pressKeys);
 window.addEventListener('keyup', pressKeys);
-window.addEventListener('blur', () => document.querySelectorAll('#heroKeys .cap').forEach(c => c.classList.remove('down')));
+window.addEventListener('blur', () => document.querySelectorAll('.keys .cap').forEach(c => c.classList.remove('down')));
 window.addEventListener('keydown', e => {
   if (!recording) return;
   e.preventDefault();
@@ -718,10 +788,12 @@ window.addEventListener('keydown', e => {
   else if (/^Key[A-Z]$/.test(e.code)) key = e.code.slice(3).toLowerCase();
   else if (/^Digit\d$/.test(e.code)) key = e.code.slice(5);
   else if (/^F([1-9]|1[0-2])$/.test(e.code)) key = e.code.toLowerCase();
-  if (!key) { keycaps(mods, mods.length ? '+ …' : 'press the new keys…'); return; }
+  const r = REC[recording];
+  if (!key) { keycaps(mods, mods.length ? '+ …' : 'press the new keys…', $(r.keys)); return; }
+  const field = recording;
   recording = false;
-  $('heroKeys').classList.remove('rec'); $('recKey').textContent = 'Change shortcut'; $('hotkeyMsg').textContent = '';
-  save({ hotkey: [...mods, key].join('+') });
+  $(r.keys).classList.remove('rec'); $('recKey').textContent = 'Change shortcut'; $(r.msg).textContent = '';
+  save({ [field]: [...mods, key].join('+') });
 }, true);
 
 // ---- the shortcut mode, text clean-ups and pasting ----

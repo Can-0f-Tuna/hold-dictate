@@ -44,17 +44,37 @@ def parse_hotkey(text: str) -> Hotkey:
 
 
 class HoldDetector:
-    """Turns raw key events into 'start' and 'stop'. Letting go of any part of the hotkey stops."""
+    """Turns raw key events into actions. Letting go of any part of the hotkey stops.
 
-    def __init__(self, hotkey: Hotkey):
+    The dictation hotkey gives 'start' and 'stop'; the optional edit hotkey gives 'edit:start' and
+    'edit:stop'. When both match the keys held (alt+space inside alt+shift+space), the one with more
+    modifiers wins. Only one is active at a time."""
+
+    def __init__(self, hotkey: Hotkey, edit: Hotkey | None = None):
         self.hotkey = hotkey
+        self.edit = edit
         self.down: dict[str, set] = {}  # name -> physical key ids currently held
         self.active = False
+        self.which = ""  # "" for the dictation hotkey, "edit" for the edit hotkey, while active
+
+    def hotkeys(self) -> list:
+        return [h for h in (self.hotkey, self.edit) if h is not None]
+
+    def _stop_if(self, which: str) -> str | None:
+        if self.active and self.which == which:
+            self.active = False
+            return "edit:stop" if which else "stop"
+        return None
 
     def set_hotkey(self, hotkey: Hotkey) -> str | None:
-        """Switches the hotkey while running. Returns 'stop' if a recording was in progress."""
-        was_active, self.hotkey, self.active = self.active, hotkey, False
-        return "stop" if was_active else None
+        """Switches the hotkey while running. Returns 'stop' if a recording with it was in progress."""
+        action, self.hotkey = self._stop_if(""), hotkey
+        return action
+
+    def set_edit_hotkey(self, hotkey: Hotkey | None) -> str | None:
+        """Switches (or with None, turns off) the edit hotkey. Returns 'edit:stop' if it was held."""
+        action, self.edit = self._stop_if("edit"), hotkey
+        return action
 
     def is_down(self, name: str) -> bool:
         return bool(self.down.get(name))
@@ -62,19 +82,36 @@ class HoldDetector:
     def modifiers_held(self) -> bool:
         return any(self.is_down(m) for m in self.hotkey.mods)
 
+    def any_modifier_held(self) -> bool:
+        return any(self.is_down(m) for m in MODIFIERS)
+
+    def wait_released(self, seconds: float = 1.0) -> bool:
+        """Waits until no modifier is held (the backend thread feeds the events). True if they all are up."""
+        deadline = time.monotonic() + seconds
+        while self.any_modifier_held():
+            if time.monotonic() >= deadline:
+                return False
+            time.sleep(0.02)
+        return True
+
     def feed(self, name: str, ident, pressed: bool):
-        """Returns 'start', 'stop' or None."""
+        """Returns 'start', 'stop', 'edit:start', 'edit:stop' or None."""
         ids = self.down.setdefault(name, set())
         if pressed:
             ids.add(ident)
-            if name == self.hotkey.key and not self.active and all(self.is_down(m) for m in self.hotkey.mods):
-                self.active = True
-                return "start"
+            if self.active:
+                return None
+            matches = [(len(h.mods), which) for which, h in (("", self.hotkey), ("edit", self.edit))
+                       if h is not None and name == h.key and all(self.is_down(m) for m in h.mods)]
+            if matches:
+                self.active, self.which = True, max(matches, key=lambda m: m[0])[1]  # a tie: dictation
+                return "edit:start" if self.which else "start"
         else:
             ids.discard(ident)
-            if self.active and (name == self.hotkey.key or name in self.hotkey.mods):
+            current = self.edit if self.which else self.hotkey
+            if self.active and current is not None and (name == current.key or name in current.mods):
                 self.active = False
-                return "stop"
+                return "edit:stop" if self.which else "stop"
         return None
 
 
@@ -202,8 +239,8 @@ class PynputBackend:
             for mod, codes in _WIN_VK.items():
                 if vk in codes:
                     (win_state.add if down else win_state.discard)(mod)
-            hotkey = detector.hotkey  # read each time: the settings page can change it while running
-            if hotkey.key == "space" and vk == 0x20 and hotkey.mods <= win_state:
+            # read each time: the settings page can change the hotkeys while running
+            if vk == 0x20 and any(h.key == "space" and h.mods <= win_state for h in detector.hotkeys()):
                 listener.suppress_event()
             return True
 
@@ -213,8 +250,7 @@ class PynputBackend:
                 import Quartz
                 code = Quartz.CGEventGetIntegerValueField(event, Quartz.kCGKeyboardEventKeycode)
                 flags = Quartz.CGEventGetFlags(event)
-                hotkey = detector.hotkey
-                if hotkey.key == "space" and code == 49 and all(flags & _MAC_FLAGS[m] for m in hotkey.mods):
+                if code == 49 and any(h.key == "space" and all(flags & _MAC_FLAGS[m] for m in h.mods) for h in detector.hotkeys()):
                     return None
             except Exception:
                 pass

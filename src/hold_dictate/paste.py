@@ -257,6 +257,119 @@ def copy_text(text: str) -> str:
     return ""
 
 
+def _read_clipboard_bytes(primary: bool = False) -> bytes | None:
+    """The clipboard (or on Linux the PRIMARY selection: the text selected right now) as UTF-8, or None."""
+    try:
+        if sys.platform == "darwin":
+            r = _run(["pbpaste"])
+            return r.stdout if r.returncode == 0 else None
+        if sys.platform == "win32":
+            import pyperclip
+            return (pyperclip.paste() or "").encode("utf-8")
+        if _wayland():
+            if not _has("wl-paste"):
+                return None
+            r = _run(["wl-paste", "-n", "-t", "text"] + (["--primary"] if primary else []))
+            return r.stdout if r.returncode == 0 else b""  # an empty clipboard exits 1
+        if _has("xclip"):
+            cmd = ["xclip", "-selection", "primary" if primary else "clipboard", "-o"]
+        elif _has("xsel"):
+            cmd = ["xsel", "-p" if primary else "-b", "-o"]
+        else:
+            return None
+        r = _run(cmd)
+        return r.stdout if r.returncode == 0 else b""
+    except Exception:
+        return None
+
+
+def clipboard_text() -> str | None:
+    """What is on the clipboard now, as text; None when it can't be read here."""
+    raw = _read_clipboard_bytes()
+    return None if raw is None else raw.decode("utf-8", "replace")
+
+
+def _write_clipboard_bytes(data: bytes | None):
+    """Puts bytes back on the clipboard; None or empty clears it."""
+    try:
+        if sys.platform == "darwin":
+            subprocess.run(["pbcopy"], input=data or b"", timeout=2)
+        elif sys.platform == "win32":
+            import pyperclip
+            pyperclip.copy((data or b"").decode("utf-8", "replace"))
+        elif _wayland():
+            if data:
+                subprocess.run(["wl-copy"], input=data, timeout=2)
+            else:
+                subprocess.run(["wl-copy", "--clear"], timeout=2)
+        else:
+            tool, _ = _x11_copier()
+            if tool:
+                subprocess.run(tool, input=data or b"", timeout=2)
+    except Exception:
+        pass
+
+
+def _send_copy(terminal: bool) -> bool:
+    """Presses the copy shortcut in the focused app: Cmd+C, Ctrl+C, or Ctrl+Shift+C in a Linux terminal."""
+    try:
+        if sys.platform in ("darwin", "win32"):
+            from pynput.keyboard import Controller, Key
+            kb = Controller()
+            with kb.pressed(Key.cmd if sys.platform == "darwin" else Key.ctrl):
+                kb.tap("c")
+            return True
+        if _wayland():
+            if _has("wtype"):
+                keys = ["-M", "ctrl"] + (["-M", "shift"] if terminal else []) + ["c"] + (["-m", "shift"] if terminal else []) + ["-m", "ctrl"]
+                if _run(["wtype", *keys]).returncode == 0:
+                    return True
+            if _has("ydotool"):
+                seq = ["29:1"] + (["42:1"] if terminal else []) + ["46:1", "46:0"] + (["42:0"] if terminal else []) + ["29:0"]
+                return _run(["ydotool", "key", *seq]).returncode == 0
+            return False
+        if _has("xdotool"):
+            return _run(["xdotool", "key", "--clearmodifiers", "ctrl+shift+c" if terminal else "ctrl+c"]).returncode == 0
+        from pynput.keyboard import Controller, Key
+        kb = Controller()
+        with kb.pressed(Key.ctrl):
+            if terminal:
+                with kb.pressed(Key.shift):
+                    kb.tap("c")
+            else:
+                kb.tap("c")
+        return True
+    except Exception:
+        return False
+
+
+def grab_selection(app: str) -> tuple[str, object]:
+    """The text selected in the focused app, and a function that puts the clipboard back as it was.
+
+    Linux, when the focused app is unknown (GNOME or KDE on Wayland) or no key tool is installed: the PRIMARY
+    selection, which needs no key press (a Ctrl+C sent to a terminal by mistake would interrupt what runs
+    in it). Everywhere else: the clipboard is saved and cleared, the copy shortcut is pressed, and what
+    lands on the clipboard is the selection; nothing there means nothing was selected."""
+    linux = sys.platform.startswith("linux")
+    can_press = not linux or not _wayland() or _has("wtype") or _has("ydotool")  # X11 falls back to pynput
+    if linux and (not app or not can_press):
+        raw = _read_clipboard_bytes(primary=True)
+        return (raw or b"").decode("utf-8", "replace"), lambda: None
+    saved = _read_clipboard_bytes()
+    _write_clipboard_bytes(None)
+    restore = lambda: _write_clipboard_bytes(saved)
+    if not _send_copy(linux and is_terminal(app)):
+        restore()
+        return "", lambda: None
+    deadline = time.monotonic() + 0.6
+    while True:  # the app copies on its own time
+        time.sleep(0.05)
+        raw = _read_clipboard_bytes()
+        if raw or time.monotonic() >= deadline:
+            break
+    return (raw or b"").decode("utf-8", "replace"), restore
+
+
 def missing_tools() -> list[str]:
     """Names of helper programs worth installing on Linux (empty elsewhere)."""
     if not sys.platform.startswith("linux"):
