@@ -39,13 +39,13 @@ Changes apply immediately; no restart needed. Prefer the terminal? `hold-dictate
 
 ## Updates
 
-hold-dictate checks GitHub once a day and, while you are not dictating, installs a newer release and restarts itself. Turn this off in the settings. When an update is waiting (automatic updates off, or the install failed), the recording pill on Linux shows a small **!** tab; click it to install, or run `hold-dictate update`. Releases are made by pushing a tag that matches `__version__` in `src/hold_dictate/__init__.py`:
+hold-dictate checks GitHub every 10 minutes and, while you are not dictating, installs a newer release and restarts itself. Turn this off in the settings. When an update is waiting (automatic updates off, or the install failed), the recording pill on Linux shows a small **!** tab; click it to install, or run `hold-dictate update`. Releases are made by pushing a tag that matches `__version__` in `src/hold_dictate/__init__.py`:
 
 ```sh
 git tag v0.5.0 && git push origin v0.5.0
 ```
 
-The Release workflow runs the tests and publishes the GitHub release. Installed copies pick it up within a day.
+The Release workflow runs the tests and publishes the GitHub release. Installed copies pick it up within 10 minutes.
 
 ## Speech-to-text providers
 

@@ -15,7 +15,7 @@ from . import __version__
 
 REPO = "Can-0f-Tuna/hold-dictate"
 LATEST_URL = f"https://api.github.com/repos/{REPO}/releases/latest"
-CHECK_EVERY = 24 * 3600
+CHECK_EVERY = 10 * 60
 FIRST_CHECK_AFTER = 60
 
 
@@ -68,7 +68,7 @@ def run_command() -> list[str]:
 
 
 class Updater:
-    """Checks once a day; installs a newer release when dictation is idle, then restarts itself."""
+    """Checks every 10 minutes; installs a newer release when dictation is idle, then restarts itself."""
 
     def __init__(self, cfg, notify=None, is_idle=None):
         self.cfg = cfg

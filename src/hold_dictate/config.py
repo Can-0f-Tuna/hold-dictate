@@ -154,7 +154,7 @@ class Config:
     min_hold: float = 0.3  # taps shorter than this (seconds) are ignored
     timeout: float = 15.0  # seconds before a cloud request is given up
     idle_unload_seconds: float = 900.0  # free the local model after this long unused
-    auto_update: bool = True  # install new releases from GitHub once a day, while idle
+    auto_update: bool = True  # install new releases from GitHub (checked every 10 minutes), while idle
     overlay_style: str = "dots"  # dots | lines
     overlay_bg: str = "#0a0a0b"  # recording pill background (Linux overlay)
     overlay_bars: str = "#6b80ff"  # recording pill dot colour
