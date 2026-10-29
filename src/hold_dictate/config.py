@@ -121,6 +121,12 @@ LOCAL_MODELS = [
 
 DUCK_MODES = ("lower", "mute", "off")  # what happens to other apps' sound while you dictate
 OVERLAY_STYLES = ("dots", "lines")  # dots: the website's halftone bars; lines: the original thin bars
+# hold: record while held. auto: a quick tap starts and the next tap stops; a longer hold works like hold.
+# toggle: every press starts or stops.
+HOTKEY_MODES = ("hold", "auto", "toggle")
+# What to do in a given app: paste (Ctrl+V, never Enter), submit (paste, then Enter), shift (Ctrl+Shift+V),
+# clipboard (only copy, you paste), off (nothing).
+APP_RULES = ("paste", "submit", "shift", "clipboard", "off")
 
 
 def config_dir() -> Path:
@@ -148,6 +154,8 @@ class Config:
     languages: str = ""  # the languages you speak, comma-separated codes such as "he,en"; empty = any language
     prompt: str = ""  # optional spelling hint: words and names the transcriber should spell your way
     hotkey: str = "alt+space"
+    hotkey_mode: str = "hold"  # hold | auto | toggle
+    silence_stop: float = 0.0  # auto and toggle: stop after this many seconds of quiet once you spoke; 0 = off
     local_model: str = "small"  # faster-whisper model name or Hugging Face repo; "small" is Automatic
     local_fallback: bool = True  # use the local model when the cloud request fails (if installed)
     beeps: bool = field(default_factory=lambda: not pill_available())  # short sounds on start, stop and error; off where the pill shows it
@@ -161,6 +169,14 @@ class Config:
     overlay_bars: str = "#6b80ff"  # recording pill dot colour
     overlay_position: str = "bottom"  # bottom | top
     overlay_size: float = 1.0  # scale of the pill, 0.75 to 1.5
+    drop_hallucinations: bool = True  # drop "Thanks for watching" and other phrases Whisper invents from noise
+    remove_fillers: bool = False  # remove um, uh, אה, אממ
+    filler_words: str = ""  # comma-separated; empty = the built-in English and Hebrew list
+    spoken_punctuation: bool = False  # "comma" -> ",", "שורה חדשה" -> a new line
+    word_overrides: dict = field(default_factory=dict)  # heard -> written; empty written deletes the word
+    auto_submit: bool = False  # press Enter after every paste (per-app rules can say otherwise)
+    app_rules: dict = field(default_factory=dict)  # app name -> paste | submit | shift | clipboard | off
+    post_hook: str = ""  # shell command: gets the text on stdin, its output is pasted; exit 77 pastes nothing
 
     def preset(self) -> dict:
         return PROVIDERS.get(self.provider, PROVIDERS["custom"])
@@ -192,9 +208,9 @@ def load(path: Path | None = None) -> Config:
     cfg = Config()
     if path.exists():
         data = tomllib.loads(path.read_text(encoding="utf-8"))
-        known = {f.name: f.type for f in fields(Config)}
+        defaults = asdict(cfg)
         for key, value in data.items():
-            if key in known:
+            if key in defaults and (not isinstance(defaults[key], dict) or isinstance(value, dict)):
                 setattr(cfg, key, value)
         if "languages" not in data:
             migrate_language(cfg, data)
@@ -234,6 +250,10 @@ def coerce(name: str, value):
     if name == "languages":
         return clean_languages(value)
     default = getattr(Config(), name)
+    if isinstance(default, dict):
+        if not isinstance(value, dict) or not all(isinstance(k, str) and isinstance(v, str) for k, v in value.items()):
+            raise ValueError(f"{name} must map text to text")
+        return {k.strip(): v.strip() for k, v in value.items() if k.strip()}
     if isinstance(default, bool):
         if not isinstance(value, bool):
             raise ValueError(f"{name} must be true or false")
@@ -248,7 +268,9 @@ def _toml_value(value) -> str:
         return "true" if value else "false"
     if isinstance(value, (int, float)):
         return repr(value)
-    escaped = str(value).replace("\\", "\\\\").replace('"', '\\"').replace("\n", "\\n")
+    if isinstance(value, dict):  # an inline table: { "heard" = "written", ... }
+        return "{ " + ", ".join(f"{_toml_value(str(k))} = {_toml_value(v)}" for k, v in value.items()) + " }" if value else "{}"
+    escaped = str(value).replace("\\", "\\\\").replace('"', '\\"').replace("\n", "\\n").replace("\r", "\\r").replace("\t", "\\t")
     return f'"{escaped}"'
 
 

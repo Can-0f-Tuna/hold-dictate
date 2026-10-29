@@ -15,8 +15,8 @@ from dataclasses import asdict, fields
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
-from . import __version__, config as cfgmod, ducking
-from .config import DUCK_MODES, LANGUAGES, LOCAL_MODELS, OVERLAY_STYLES, PROVIDERS, Config
+from . import __version__, config as cfgmod, ducking, textproc
+from .config import APP_RULES, DUCK_MODES, HOTKEY_MODES, LANGUAGES, LOCAL_MODELS, OVERLAY_STYLES, PROVIDERS, Config
 
 PAGE = Path(__file__).with_name("settings.html")
 REOPEN = {"linux": "from your app menu (hold-dictate settings)", "darwin": "from the hold-dictate icon in the menu bar"}
@@ -73,10 +73,11 @@ def saved_token() -> str:
 class SettingsServer:
     """daemon=True when it runs inside `hold-dictate run`; False for the stand-alone `settings` command."""
 
-    def __init__(self, cfg: Config, on_saved=None, updater=None, daemon: bool = True, port: int = PORT):
+    def __init__(self, cfg: Config, on_saved=None, updater=None, daemon: bool = True, port: int = PORT, session=None):
         self.cfg = cfg
         self.on_saved = on_saved or (lambda cfg: None)
         self.updater = updater
+        self.session = session  # the running dictation: last_text, last_app, copy_last(), paste_last()
         self.daemon = daemon
         self.problem = ""  # set when no shortcut can work (the keyboard can't be read), shown on the page
         self.hotkey_problem = ""  # set when the saved shortcut was invalid and the default is used
@@ -118,6 +119,8 @@ class SettingsServer:
         values["languages"] = cfg.language_codes()
         key = cfg.saved_key()
         updater = self.updater
+        session = self.session
+        from .paste import can_detect_focus
         return {
             "version": __version__,
             "platform": sys.platform,
@@ -140,6 +143,9 @@ class SettingsServer:
                 "progress": updater.progress if updater else None,
                 "can_update": (updater.can_update() if updater else "not running") or "",
             },
+            "last": {"text": getattr(session, "last_text", "") or "", "app": getattr(session, "last_app", "") or ""},
+            "fillers_default": list(textproc.FILLERS),
+            "focus_detect": can_detect_focus(),
             "config_path": str(cfgmod.config_path()),
         }
 
@@ -164,6 +170,15 @@ class SettingsServer:
             raise ValueError("background audio must be " + ", ".join(DUCK_MODES))
         if new.overlay_style not in OVERLAY_STYLES:
             raise ValueError("style must be " + " or ".join(OVERLAY_STYLES))
+        if new.hotkey_mode not in HOTKEY_MODES:
+            raise ValueError("hotkey mode must be " + ", ".join(HOTKEY_MODES))
+        new.silence_stop = min(60.0, max(0.0, new.silence_stop))
+        new.word_overrides = {k.strip(): v for k, v in new.word_overrides.items() if k.strip()}
+        new.app_rules = {k.strip().lower(): v for k, v in new.app_rules.items() if k.strip()}
+        for app, rule in new.app_rules.items():
+            if rule not in APP_RULES:
+                raise ValueError(f"rule for {app} must be " + ", ".join(APP_RULES))
+        new.post_hook = new.post_hook.strip()
         if not new.local_model:
             new.local_model = LOCAL_MODELS[0][0]
         new.overlay_size = min(1.5, max(0.75, new.overlay_size))
@@ -206,6 +221,12 @@ class SettingsServer:
                 break
             time.sleep(0.25)
         return {"message": message, "url": url}
+
+    def last(self, action: str) -> dict:
+        if not self.session:
+            return {"message": "hold-dictate is not running"}
+        note = self.session.copy_last() if action == "copy" else self.session.paste_last()
+        return {"message": note or ""}
 
     def update(self, action: str) -> dict:
         if not self.updater:
@@ -276,6 +297,8 @@ class _Handler(BaseHTTPRequestHandler):
                 "/api/service": self.app.start_service,
                 "/api/update/check": lambda: self.app.update("check"),
                 "/api/update/install": lambda: self.app.update("install"),
+                "/api/last/copy": lambda: self.app.last("copy"),
+                "/api/last/paste": lambda: self.app.last("paste"),
             }
             if self.path not in routes:
                 return self._json({"error": "not found"}, 404)

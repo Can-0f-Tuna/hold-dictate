@@ -1,4 +1,4 @@
-"""Menu-bar / system-tray icon on Windows and macOS: Settings, Check for updates, Quit.
+"""Menu-bar / system-tray icon on Windows and macOS: Settings, Copy last dictation, Check for updates, Quit.
 
 Linux has no tray here (Wayland trays need extra system libraries); it gets an app-menu entry instead.
 """
@@ -30,11 +30,12 @@ def _icon_image():
 
 
 class Tray:
-    def __init__(self, on_settings, on_check_updates, on_quit):
+    def __init__(self, on_settings, on_check_updates, on_quit, on_copy_last=None):
         import pystray
         self.on_quit = on_quit
         menu = pystray.Menu(
             pystray.MenuItem("Settings", lambda: on_settings(), default=True),
+            pystray.MenuItem("Copy last dictation", lambda: on_copy_last and on_copy_last()),
             pystray.MenuItem("Check for updates", lambda: on_check_updates()),
             pystray.Menu.SEPARATOR,
             pystray.MenuItem("Quit hold-dictate", self._quit),

@@ -95,7 +95,7 @@ def test_dictation_ducks_while_recording(api):
     from hold_dictate.app import Dictation
     fake = FakeBackend()
     cfg = Config(provider="custom", base_url=api.url, api_key="k", min_hold=0.0)
-    d = Dictation(cfg, FakeFeedback(), recorder_factory=FakeRecorder, paster=lambda t: "", ducker=Ducker(cfg, fake.pair))
+    d = Dictation(cfg, FakeFeedback(), recorder_factory=FakeRecorder, paster=lambda t, **kw: "", focus=lambda: "", ducker=Ducker(cfg, fake.pair))
     d.on_action("start")
     d.on_action("stop")
     d.ducker.close()
