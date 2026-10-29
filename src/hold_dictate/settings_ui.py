@@ -19,6 +19,12 @@ from . import __version__, config as cfgmod, ducking
 from .config import DUCK_MODES, LANGUAGES, LOCAL_MODELS, OVERLAY_STYLES, PROVIDERS, Config
 
 PAGE = Path(__file__).with_name("settings.html")
+STALE_PAGE = (
+    b'<!doctype html><meta charset="utf-8"><meta name="color-scheme" content="light dark"><title>hold-dictate settings</title>'
+    b'<body style="font:16px/1.6 system-ui,sans-serif;max-width:560px;margin:15vh auto;padding:0 24px">'
+    b"<h1 style=\"font-size:24px\">This settings link has expired.</h1>"
+    b"<p>Open the settings again from the hold-dictate icon, or run <code>hold-dictate settings</code> in a terminal.</p>"
+)
 FONTS = {"/fonts/geist.woff2": "geist-latin.woff2", "/fonts/geist-mono.woff2": "geist-mono-latin.woff2"}
 PORT = 47811
 SECRET_FIELDS = {"api_key"}
@@ -227,7 +233,7 @@ class _Handler(BaseHTTPRequestHandler):
         if path == "/":
             token = dict(p.partition("=")[::2] for p in query.split("&") if p).get("t", "")
             if not self._allowed(token):
-                return self._send(403, b"Open the settings with `hold-dictate settings`.", "text/plain; charset=utf-8")
+                return self._send(403, STALE_PAGE, "text/html; charset=utf-8")
             state = json.dumps(self.app.state(), ensure_ascii=False).replace("</", "<\\/")
             page = PAGE.read_text(encoding="utf-8").replace("/*STATE*/null", state, 1)
             return self._send(200, page.encode("utf-8"), "text/html; charset=utf-8")

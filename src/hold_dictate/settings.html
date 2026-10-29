@@ -197,7 +197,7 @@ details .items { margin-top:var(--s-6); }
   <div class="save" id="save" role="status" aria-live="polite"></div>
 </header>
 
-<div class="banner err" id="stale" hidden><span>hold-dictate restarted, so this page is out of date.</span><button class="btn small primary" id="reload">Reload</button></div>
+<div class="banner err" id="stale" hidden><span>This page belongs to an earlier run of hold-dictate and can't save any more. Open the settings again from the hold-dictate icon, or run <code>hold-dictate settings</code>.</span></div>
 </div>
 
 <section class="hero" aria-label="Status">
@@ -288,7 +288,7 @@ details .items { margin-top:var(--s-6); }
     <div class="item"><span class="label" id="l-pos">Position</span>
       <div><div class="seg" id="overlay_position" role="group" aria-labelledby="l-pos"><button data-v="bottom">Bottom</button><button data-v="top">Top</button></div></div>
     </div>
-    <div class="row"><label class="text" for="overlay_size"><b>Size</b></label><input type="range" id="overlay_size" min="0.75" max="1.5" step="0.05"></div>
+    <div class="item"><label class="label" for="overlay_size">Size</label><input type="range" id="overlay_size" min="0.75" max="1.5" step="0.05"></div>
     <div><button class="link" id="resetLook">Reset the look</button></div>
   </div>
 </section>
@@ -334,12 +334,11 @@ async function api(path, body) {
   let res;
   try { res = await fetch(path, { method: body === undefined ? 'GET' : 'POST', headers: { 'X-Token': TOKEN, 'Content-Type': 'application/json' }, body: body === undefined ? undefined : JSON.stringify(body) }); }
   catch { throw new Error("can't reach hold-dictate. Is it running?"); }
-  if (res.status === 403) { $('stale').hidden = false; throw new Stale('reload the page'); }
+  if (res.status === 403) { $('stale').hidden = false; throw new Stale('open the settings again'); }
   const data = await res.json().catch(() => ({ error: res.statusText }));
   if (!res.ok) throw new Error(data.error || res.statusText);
   return data;
 }
-$('reload').onclick = () => location.reload();
 const homes = Object.fromEntries(['keyRows', 'customRows', 'startSvc'].map(id => [id, { parent: $(id).parentNode, next: $(id).nextElementSibling }]));
 
 // ---- the save indicator: every change saves at once ----
@@ -348,7 +347,7 @@ function saveState(kind, text) {
   const el = $('save');
   el.className = 'save ' + kind;
   const label = { idle: 'Changes save automatically', saving: 'Saving…', saved: 'Saved', failed: text }[kind];
-  el.innerHTML = (kind === 'saving' ? '' : kind === 'failed' ? '' : ICON_OK) + '<span></span>';
+  el.innerHTML = (kind === 'saved' ? ICON_OK : '') + '<span></span>';
   el.lastChild.textContent = label;
   clearTimeout(saveTimer);
   if (kind === 'saved') saveTimer = setTimeout(() => saveState('idle'), 2200);
@@ -449,7 +448,7 @@ function renderService(s) {
   const help = $('keyHelp'); help.textContent = '';
   if (p && p.keys_url) {
     const a = document.createElement('a'); a.href = p.keys_url; a.target = '_blank'; a.rel = 'noopener'; a.textContent = new URL(p.keys_url).host;
-    help.append('Get a free key at ', a, '. Sign in, create a key, copy it and paste it here. It stays on this computer.');
+    help.append(c.provider === 'groq' ? 'Get a free key at ' : 'Get a key at ', a, '. Sign in, create a key, copy it and paste it here. It stays on this computer.');
   }
   renderModel(s);
 }
