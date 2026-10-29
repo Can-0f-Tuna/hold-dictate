@@ -20,7 +20,7 @@ irm https://hold-dictate.vercel.app/install.ps1 | iex
 
 The script installs [uv](https://docs.astral.sh/uv/), the system helpers it needs and the latest release of hold-dictate, starts it (and at every login), then opens the settings page in your browser. Add your API key there. Running the script again reinstalls the latest release.
 
-With an AI coding agent (Claude Code, Codex, Cursor, ...): paste the prompt from [site/agent.md](site/agent.md), also at <https://hold-dictate.vercel.app/agent.md>. The agent installs it, walks you through the key, runs the checks and opens a GitHub issue for anything it can't fix.
+With an AI coding agent (Claude Code, Codex, Cursor, ...): paste the prompt from [install/agent.md](install/agent.md), also at <https://hold-dictate.vercel.app/agent.md>. The agent installs it, walks you through the key, runs the checks and opens a GitHub issue for anything it can't fix.
 
 Manual install: `uv tool install git+https://github.com/Can-0f-Tuna/hold-dictate`, then `hold-dictate service install` and `hold-dictate settings`.
 
@@ -92,6 +92,10 @@ Hotkey format: modifiers (`alt`, `ctrl`, `shift`, `super`) plus one key (`space`
 ## Status
 
 Pre-release. Tested end to end on Linux (Wayland, PipeWire) with a mock provider and the local model. The Windows and macOS code paths are unit-tested and run in CI, but the hotkey hooks, permissions and paste have not yet been tried on real machines of those systems. A live call to Groq or OpenAI has not been tested with this version either. The tray icon (Windows, macOS) and self-update on Windows have not been tried on a real machine yet.
+
+## What is open source
+
+This repository is the app itself, under the MIT license (see [LICENSE](LICENSE)), plus the install scripts in `install/`. The website, the account server behind it and the Premium features are a separate, closed project.
 
 ## Develop
 
