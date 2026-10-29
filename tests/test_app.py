@@ -170,7 +170,7 @@ class TalkingRecorder(FakeRecorder):
 
         def feed():
             while self.running:
-                on_level(0.05 if time.monotonic() - started > talk else 0.7)
+                on_level(0.05 if time.monotonic() - started >= talk else 0.7)  # >=: a coarse clock (Windows) reads 0 at first
                 time.sleep(0.02)
         threading.Thread(target=feed, daemon=True).start()
 
@@ -208,12 +208,14 @@ def test_silence_stop_waits_while_you_talk_and_is_off_at_zero(api):
 
 def test_silence_stop_gives_up_when_nothing_is_said(api, monkeypatch):
     import hold_dictate.app as app_mod
-    monkeypatch.setattr(app_mod, "NO_SPEECH_SECONDS", 0.5)
+    monkeypatch.setattr(app_mod, "NO_SPEECH_SECONDS", 1.5)
     d, _, _ = dictation(cfg_for(api, hotkey_mode="auto", silence_stop=0.2), recorder=lambda lv: TalkingRecorder(lv, talk=0))
     tap(d)
-    time.sleep(0.4)
+    time.sleep(0.5)
     assert d.recorder is not None  # waits NO_SPEECH_SECONDS, not silence_stop, before anything is said
-    time.sleep(0.6)
+    deadline = time.monotonic() + 10  # slow CI runners oversleep; poll instead of one fixed wait
+    while d.recorder is not None and time.monotonic() < deadline:
+        time.sleep(0.05)
     assert d.recorder is None
     settle(d)
 

@@ -131,13 +131,13 @@ def test_languages_are_a_list(server):
 
 def test_old_language_settings_migrate(tmp_path):
     p = tmp_path / "c.toml"
-    p.write_text(f'language = ""\nprompt = "{HEBREW_PROMPT}"\n')
+    p.write_text(f'language = ""\nprompt = "{HEBREW_PROMPT}"\n', encoding="utf-8")
     cfg = config.load(p)
     assert cfg.languages == "he,en" and cfg.prompt == ""
     p.write_text('language = "fr"\n')
     assert config.load(p).languages == "fr"
     config.save(config.load(p), p)
-    assert config.load(p).languages == "fr" and "language =" not in p.read_text()
+    assert config.load(p).languages == "fr" and "language =" not in p.read_text(encoding="utf-8")
 
 
 def test_token_survives_a_restart(server):
