@@ -164,7 +164,7 @@ class SettingsServer:
         if new.provider == "local":
             ok = importlib.util.find_spec("faster_whisper") is not None
             return {"ok": ok, "message": "" if ok else 'Install the local model first: uv tool install --force "hold-dictate[local]"'}
-        problem = check_api(new)
+        problem = check_api(new).replace("Enter it again in the settings (`hold-dictate settings`).", "Check that you copied all of it.")
         return {"ok": not problem, "message": problem}
 
     def start_service(self) -> dict:
