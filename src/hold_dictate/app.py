@@ -121,6 +121,7 @@ def run(cfg: Config) -> int:
     detector = HoldDetector(hotkey)
     dictation = Dictation(cfg, feedback)
     updater = Updater(cfg, notify=feedback.notify, is_idle=dictation.idle)
+    feedback.pending_update = lambda: updater.latest if updater.available() and not updater.ready else ""
 
     def on_saved(new_cfg: Config):
         new_hotkey = parse_hotkey(new_cfg.hotkey)

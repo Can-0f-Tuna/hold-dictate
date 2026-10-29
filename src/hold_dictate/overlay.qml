@@ -4,10 +4,11 @@
 // middle and finer toward the tips), and "lines", the original thin rounded bars.
 // Driven by lines the daemon appends to $XDG_RUNTIME_DIR/hold-dictate.events:
 //   C <bg> <bars> <bottom|top> <scale> [dots|lines]   look, from the settings page (sent before each S)
+//   U <version|->  an update is waiting (sent before each S): a "!" tab on the pill installs it
 //   S              recording started: show
 //   L <level>      loudness of the last 20 ms, 0..1
 //   T              recording finished, transcribing
-//   Q              hide
+//   Q              hide (with an update waiting, the "!" tab stays a few seconds so it can be clicked)
 import QtQuick
 import Quickshell
 import Quickshell.Io
@@ -32,6 +33,11 @@ ShellRoot {
     property bool active: false
     property bool transcribing: false
     property real shown: 0.0
+    property string updateVersion: ""
+    property bool nudging: false     // the pill is gone; only the "!" tab is left, waiting for a click
+    property bool updating: false
+    readonly property bool tabWanted: updateVersion !== "" && (active || nudging)
+    property real tabShown: 0.0
     property color pillColor: "#0a0a0b"
     property color barColor: "#6b80ff"
     property bool atTop: false
@@ -53,7 +59,11 @@ ShellRoot {
             style = parts[5] === "lines" ? "lines" : "dots";
         } else if (parts[0] === "L") {
             level = parseFloat(parts[1]) || 0;
+        } else if (parts[0] === "U") {
+            updateVersion = parts[1] && parts[1] !== "-" ? parts[1] : "";
+            updating = false;
         } else if (parts[0] === "S") {
+            nudging = false;
             transcribing = false;
             level = 0;
             envelope = 0;
@@ -65,6 +75,10 @@ ShellRoot {
             level = 0;
         } else if (parts[0] === "Q") {
             active = false;
+            if (updateVersion !== "" && !updating) {
+                nudging = true;
+                nudgeTimer.restart();
+            }
         }
     }
 
@@ -84,19 +98,127 @@ ShellRoot {
     }
     onActiveChanged: shown = active ? 1 : 0
 
+    Behavior on tabShown {
+        NumberAnimation {
+            duration: 220
+            easing.type: Easing.OutCubic
+        }
+    }
+    onTabWantedChanged: tabShown = tabWanted ? 1 : 0
+
+    Timer {
+        id: nudgeTimer
+        interval: 7000
+        onTriggered: {
+            if (tabMouse.containsMouse && !root.updating)
+                restart();
+            else
+                root.nudging = false;
+            if (root.updating) {
+                root.updateVersion = "";
+                interval = 7000;
+            }
+        }
+    }
+
+    Process {
+        id: installUpdate
+        command: {
+            const python = Quickshell.env("HOLD_DICTATE_PYTHON");
+            return python ? [python, "-m", "hold_dictate", "update"] : ["hold-dictate", "update"];
+        }
+    }
+
+    Region {
+        id: noInput
+    }
+    Region {
+        id: tabInput
+        item: tab
+    }
+
     PanelWindow {
-        visible: root.active || root.shown > 0
+        visible: root.active || root.shown > 0 || root.tabShown > 0
         color: "transparent"
         anchors.bottom: !root.atTop
         anchors.top: root.atTop
         margins.bottom: 48
         margins.top: 48
-        implicitWidth: Math.ceil(256 * root.sizeScale)
+        implicitWidth: Math.ceil(440 * root.sizeScale)   // room for the "!" tab when it opens out
         implicitHeight: Math.ceil(80 * root.sizeScale)
         exclusionMode: ExclusionMode.Ignore
-        mask: Region {}
+        mask: root.tabShown > 0.5 && !root.updating ? tabInput : noInput   // clicks pass through everything else
         WlrLayershell.layer: WlrLayer.Overlay
         WlrLayershell.namespace: "hold-dictate"
+
+        // The update tab: tucked under the right end of the pill, as if pulled out of it.
+        Rectangle {
+            id: tab
+            readonly property real s: root.sizeScale
+            readonly property real tuck: 20 * s * root.shown   // shrinks as the pill fades, so the "!" never moves
+            readonly property bool open: tabMouse.containsMouse || root.updating
+            x: parent.width / 2 + 112 * s - tuck
+            anchors.verticalCenter: parent.verticalCenter
+            width: tuck + (open ? label.implicitWidth + 30 * s : 30 * s)
+            height: 34 * s
+            radius: height / 2
+            color: root.pillColor
+            border.width: 1
+            border.color: tabMouse.containsMouse ? root.barColor : "#2a2a2e"
+            opacity: root.tabShown
+            visible: root.tabShown > 0
+            transform: Translate {
+                x: (1 - root.tabShown) * -18 * tab.s
+            }
+            Behavior on width {
+                NumberAnimation {
+                    duration: 180
+                    easing.type: Easing.OutCubic
+                }
+            }
+
+            Row {
+                x: tab.tuck + 11 * tab.s
+                anchors.verticalCenter: parent.verticalCenter
+                spacing: 7 * tab.s
+                Text {
+                    text: "!"
+                    color: root.barColor
+                    font.pixelSize: 17 * tab.s
+                    font.weight: Font.Black
+                    anchors.verticalCenter: parent.verticalCenter
+                }
+                Text {
+                    id: label
+                    text: root.updating ? "Updating…" : "Update"
+                    color: "#e8e8ea"
+                    font.pixelSize: 13 * tab.s
+                    font.weight: Font.Medium
+                    opacity: tab.open ? 1 : 0
+                    anchors.verticalCenter: parent.verticalCenter
+                    Behavior on opacity {
+                        NumberAnimation {
+                            duration: 140
+                        }
+                    }
+                }
+            }
+
+            MouseArea {
+                id: tabMouse
+                anchors.fill: parent
+                hoverEnabled: true
+                cursorShape: Qt.PointingHandCursor
+                onClicked: {
+                    if (root.updating)
+                        return;
+                    root.updating = true;
+                    installUpdate.running = true;
+                    nudgeTimer.interval = 2500;
+                    nudgeTimer.restart();
+                }
+            }
+        }
 
         Rectangle {
             id: pill

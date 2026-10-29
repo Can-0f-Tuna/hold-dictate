@@ -15,6 +15,20 @@ RUNTIME = os.environ.get("XDG_RUNTIME_DIR") or "/tmp"
 EVENTS_FILE = os.path.join(RUNTIME, "hold-dictate.events")
 
 
+def _stop_stale_overlays():
+    """An update restarts the daemon in place, so the overlay the old version started is still running.
+    Any overlay of ours is stale at this point (versions before 0.4.3 kept no record of it)."""
+    for entry in Path("/proc").iterdir():
+        if not entry.name.isdigit() or int(entry.name) == os.getpid():
+            continue
+        try:
+            argv = (entry / "cmdline").read_bytes().split(b"\0")
+            if entry.stat().st_uid == os.getuid() and argv[0].endswith(b"quickshell") and argv[2].endswith(b"hold_dictate/overlay.qml"):
+                os.kill(int(entry.name), 15)
+        except (OSError, IndexError):
+            pass
+
+
 def _tone(freqs, seconds=0.08, volume=0.15):
     t = np.arange(int(SAMPLE_RATE * seconds)) / SAMPLE_RATE
     parts = [np.sin(2 * np.pi * f * t) * np.hanning(len(t)) for f in freqs]
@@ -27,18 +41,21 @@ TONES = {"start": _tone([660]), "stop": _tone([520]), "error": _tone([300, 220],
 class Feedback:
     def __init__(self, cfg=None):
         self.cfg = cfg  # read on every use, so changes from the settings page apply at once
+        self.pending_update = lambda: ""  # version waiting to be installed; the pill shows a "!" tab
         self.proc = None
         self.events = None
         if sys.platform.startswith("linux") and os.environ.get("WAYLAND_DISPLAY") and shutil.which("quickshell"):
             self.events = open(EVENTS_FILE, "w", buffering=1)
+            _stop_stale_overlays()
             self._ensure_overlay()
 
     def _ensure_overlay(self):
         if self.proc and self.proc.poll() is None:
             return
         try:
+            env = dict(os.environ, HOLD_DICTATE_PYTHON=sys.executable)  # the "!" tab runs `hold-dictate update`
             self.proc = subprocess.Popen(
-                ["quickshell", "-p", str(QML)], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
+                ["quickshell", "-p", str(QML)], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, env=env
             )
         except OSError:
             self.events = None
@@ -65,6 +82,7 @@ class Feedback:
         if self.cfg:
             c = self.cfg
             self._send(f"C {c.overlay_bg} {c.overlay_bars} {c.overlay_position} {c.overlay_size:.2f} {c.overlay_style}")
+        self._send(f"U {self.pending_update() or '-'}")
         self._send("S")
         self._beep("start")
 

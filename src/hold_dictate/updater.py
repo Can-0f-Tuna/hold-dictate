@@ -160,9 +160,9 @@ class Updater:
             if self.is_idle():
                 self.restart()
             return
-        if not self.cfg.auto_update or time.monotonic() < self.next_check:
+        if time.monotonic() < self.next_check:
             return
         self.next_check = time.monotonic() + CHECK_EVERY
-        if self.can_update():
-            return
-        threading.Thread(target=self.install, daemon=True).start()
+        # With automatic updates off (or impossible here) it still looks, so the pill can offer the update.
+        job = self.install if self.cfg.auto_update and not self.can_update() else self.check
+        threading.Thread(target=job, daemon=True).start()

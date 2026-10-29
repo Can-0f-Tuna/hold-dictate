@@ -87,8 +87,36 @@ def test_overlay_gets_the_style():
     fb.cfg, fb.proc, fb.sent = Config(overlay_style="lines"), None, []
     fb.events = type("W", (), {"write": lambda self, line: fb.sent.append(line)})()
     fb._ensure_overlay = lambda: None
+    fb.pending_update = lambda: ""
     fb.recording()
-    assert fb.sent[0].split() == ["C", "#0a0a0b", "#6b80ff", "bottom", "1.00", "lines"] and fb.sent[1] == "S\n"
+    assert fb.sent[0].split() == ["C", "#0a0a0b", "#6b80ff", "bottom", "1.00", "lines"]
+    assert fb.sent[1:] == ["U -\n", "S\n"]
+    fb.sent.clear()
+    fb.pending_update = lambda: "v9.9.9"
+    fb.recording()
+    assert fb.sent[1] == "U v9.9.9\n"
+
+
+def test_updater_still_checks_when_auto_update_is_off(monkeypatch):
+    u = updater.Updater(Config(auto_update=False))
+    ran = []
+    monkeypatch.setattr(u, "check", lambda: ran.append("check"))
+    monkeypatch.setattr(u, "install", lambda: ran.append("install"))
+    monkeypatch.setattr(updater.threading, "Thread", lambda target, daemon: type("T", (), {"start": lambda self: target()})())
+    u.next_check = 0
+    u.tick()
+    assert ran == ["check"]
+
+
+def test_update_command_installs_through_the_daemon(server, monkeypatch, capsys):
+    from hold_dictate import cli
+    asked = []
+    server.updater = type("U", (), {
+        "latest": "v9.9.9", "status": "", "available": lambda self: True, "can_update": lambda self: "",
+        "update_now": lambda self: asked.append("install"),
+    })()
+    assert cli.main(["update"]) == 0
+    assert asked == ["install"] and "v9.9.9" in capsys.readouterr().out
 
 
 def test_hebrew_language_maps_to_prompt(server):

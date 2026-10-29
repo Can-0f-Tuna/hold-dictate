@@ -39,7 +39,7 @@ Changes apply immediately; no restart needed. Prefer the terminal? `hold-dictate
 
 ## Updates
 
-hold-dictate checks GitHub once a day and, while you are not dictating, installs a newer release and restarts itself. Turn this off in the settings. Releases are made by pushing a tag that matches `__version__` in `src/hold_dictate/__init__.py`:
+hold-dictate checks GitHub once a day and, while you are not dictating, installs a newer release and restarts itself. Turn this off in the settings. When an update is waiting (automatic updates off, or the install failed), the recording pill on Linux shows a small **!** tab; click it to install, or run `hold-dictate update`. Releases are made by pushing a tag that matches `__version__` in `src/hold_dictate/__init__.py`:
 
 ```sh
 git tag v0.4.2 && git push origin v0.4.0
@@ -69,6 +69,7 @@ If the cloud request fails and the `local` extra is installed, it falls back to 
 | `hold-dictate doctor` | Checks microphone, keyboard access, paste helpers and API key |
 | `hold-dictate transcribe FILE.wav` | Transcribes a file |
 | `hold-dictate service install\|uninstall\|status` | Start at login |
+| `hold-dictate update` | Installs the latest release now |
 | `hold-dictate config` | Prints the config file path |
 
 Settings live in a TOML file: `~/.config/hold-dictate/config.toml` (Linux), `~/Library/Application Support/hold-dictate/config.toml` (macOS), `%APPDATA%\hold-dictate\config.toml` (Windows). Options: `provider`, `api_key`, `base_url`, `model`, `language`, `prompt`, `hotkey`, `local_model`, `local_fallback`, `sounds`, `background_audio` (`lower`, `mute` or `off`), `min_hold`, `timeout`, `auto_update`, `overlay_bg`, `overlay_bars`, `overlay_position`, `overlay_size`.

@@ -1,7 +1,9 @@
 import argparse
 import getpass
 import importlib.util
+import json
 import sys
+import urllib.request
 
 from . import __version__, config as cfgmod, service
 from .config import HEBREW_PROMPT, PROVIDERS, Config
@@ -172,6 +174,30 @@ def cmd_settings(args) -> int:
     return 0
 
 
+def cmd_update(_args) -> int:
+    """Installs the latest release in the running hold-dictate (the pill's "!" tab runs this)."""
+    import webbrowser
+    from .settings_ui import running_url, runtime_file
+    url = running_url()
+    if not url:
+        print("hold-dictate is not running. Start it, or run the install script again to update.")
+        return 1
+    info = json.loads(runtime_file().read_text(encoding="utf-8"))
+    request = urllib.request.Request(
+        f"http://127.0.0.1:{info['port']}/api/update/install", data=b"{}", method="POST",
+        headers={"X-Token": info["token"], "Content-Type": "application/json"},
+    )
+    with urllib.request.urlopen(request, timeout=10) as response:
+        state = json.load(response)
+    problem = state["update"]["can_update"]
+    if problem:  # cannot install itself here: the settings page explains what to do
+        print(f"Cannot update automatically: {problem}. Opening the settings.")
+        webbrowser.open(url)
+        return 1
+    print(f"Installing {state['update']['latest'] or 'the latest version'}; hold-dictate restarts when it is done.")
+    return 0
+
+
 def cmd_config(_args) -> int:
     print(cfgmod.config_path())
     return 0
@@ -209,6 +235,7 @@ def main(argv=None) -> int:
     f = sub.add_parser("transcribe", help="transcribe a WAV file and print it")
     f.add_argument("path")
     f.set_defaults(fn=cmd_file)
+    sub.add_parser("update", help="install the latest release now").set_defaults(fn=cmd_update)
     sub.add_parser("config", help="print the config file path").set_defaults(fn=cmd_config)
     sv = sub.add_parser("service", help="manage start-at-login")
     sv.add_argument("action", choices=["install", "uninstall", "status"])
