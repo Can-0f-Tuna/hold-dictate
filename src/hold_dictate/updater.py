@@ -132,7 +132,10 @@ class Updater:
                 return True
             self.status = f"installing {self.latest}"
             self.progress = 0
-            output = self._run_install([uv, "tool", "install", "--force", spec])
+            try:
+                output = self._run_install([uv, "tool", "install", "--force", spec])
+            except OSError as e:
+                output = str(e)
             if output is not None:
                 self.progress = None
                 self.status = f"update failed: {output.strip()[-300:]}"

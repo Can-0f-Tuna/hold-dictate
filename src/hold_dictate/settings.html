@@ -45,6 +45,7 @@ code { font:500 .9em var(--mono); background:var(--soft); border:1px solid var(-
 .save { display:flex; align-items:center; gap:var(--s-2); height:32px; margin:var(--s-4) calc(-1 * var(--s-3)) 0 0; padding:0 var(--s-3); border-radius:var(--r-pill);
   background:color-mix(in srgb, var(--paper) 88%, transparent); -webkit-backdrop-filter:blur(8px); backdrop-filter:blur(8px);
   font-size:var(--t-sm); color:var(--muted); white-space:nowrap; border:1px solid transparent; transition:background .2s, border-color .2s, box-shadow .2s; }
+.bar.float .save { margin-right:0; }
 .bar.float .save { background:color-mix(in srgb, var(--surface) 92%, transparent); border-color:var(--line); box-shadow:0 6px 20px -12px rgba(0,0,0,.35); } /* over the settings once you scroll */
 .save svg { width:15px; height:15px; flex:none; }
 .save.saving { color:var(--ink-2); }
@@ -647,7 +648,9 @@ async function followUpd() {
   S = s;
   if (s.version !== upd.from) { upd = null; render(s); showUpd(`Updated to version ${s.version}.`, null, true); return; }
   const u = s.update;
-  if (u.progress == null && !u.ready && /failed|cannot/.test(u.status)) { upd = null; render(s); return; }
+  // failed, or it found nothing to install (progress never started): show what the server says
+  if (u.progress == null && !u.ready && (/failed|cannot/.test(u.status) || Date.now() - upd.started > 4000)) { upd = null; render(s); return; }
+  if (u.progress != null) upd.started = Infinity;
   if (upd.restarted && !u.ready) { // it came back, but as the old version
     upd = null; updNote = `The update didn't take: you still have version ${s.version}. Try again with Update now.`; render(s); return;
   }
@@ -660,7 +663,7 @@ async function followUpd() {
 }
 $('installUpd').onclick = async () => {
   updNote = ''; const want = (S.update.latest || '').replace(/^v/, '');
-  try { S = await api('/api/update/install', {}); upd = { want, from: S.version, shown: 0, gone: 0 }; showUpd(`Downloading version ${want}… 0%`, 0); followUpd(); }
+  try { S = await api('/api/update/install', {}); upd = { want, from: S.version, shown: 0, gone: 0, started: Date.now() }; showUpd(`Downloading version ${want}… 0%`, 0); followUpd(); }
   catch (e) { $('updMsg').className = 'note bad'; $('updMsg').textContent = e.message; }
 };
 $('startSvc').onclick = async () => {
