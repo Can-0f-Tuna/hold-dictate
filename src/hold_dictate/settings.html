@@ -50,6 +50,7 @@ code { font:500 .9em var(--mono); background:var(--soft); border:1px solid var(-
 .save.saving { color:var(--ink-2); }
 .save.saved { color:var(--ink); }
 .save.failed { color:var(--err); white-space:normal; }
+.save.offline { color:var(--err); }
 
 /* banner for problems that block everything */
 .banner { display:flex; align-items:center; justify-content:space-between; gap:var(--s-4); margin-top:var(--s-3); margin-bottom:var(--s-3); padding:var(--s-3) var(--s-4); border:1px solid var(--line-2); border-radius:var(--r-md); background:var(--surface); font-size:var(--t-sm); }
@@ -156,10 +157,10 @@ input[type=number] { width:110px; }
 .pill { position:absolute; left:50%; display:grid; place-items:center; width:224px; height:56px; border-radius:var(--r-pill); border:1px solid #2a2a2e; transform:translateX(-50%) scale(var(--s,1)); transition:top .2s, bottom .2s; box-shadow:0 14px 34px -14px rgba(0,0,0,.5); }
 .pill canvas { display:block; width:192px; height:40px; }
 .swatches { display:flex; flex-wrap:wrap; align-items:center; gap:var(--s-3); }
-.swatches button { width:26px; height:26px; border-radius:50%; border:1px solid rgba(0,0,0,.18); cursor:pointer; padding:0; }
+.swatches button { width:26px; height:26px; border-radius:50%; border:1px solid var(--edge); cursor:pointer; padding:0; }
 .swatches button[aria-pressed=true] { outline:2px solid var(--ink); outline-offset:3px; }
 .swatches label { display:inline-flex; align-items:center; gap:var(--s-2); font-size:var(--t-sm); color:var(--muted); margin-inline-start:var(--s-1); }
-input[type=color] { width:30px; height:30px; padding:2px; border:1px solid var(--line-2); border-radius:var(--r-sm); background:var(--surface); cursor:pointer; }
+input[type=color] { width:30px; height:30px; padding:2px; border:1px solid var(--edge); border-radius:var(--r-sm); background:var(--surface); cursor:pointer; }
 input[type=range] { width:220px; accent-color:var(--ink); }
 
 /* advanced */
@@ -333,9 +334,9 @@ class Stale extends Error {}
 async function api(path, body) {
   let res;
   try { res = await fetch(path, { method: body === undefined ? 'GET' : 'POST', headers: { 'X-Token': TOKEN, 'Content-Type': 'application/json' }, body: body === undefined ? undefined : JSON.stringify(body) }); }
-  catch { reachable = false; if (S) render(S); retry(); throw new Error("can't reach hold-dictate. Is it running?"); }
-  reachable = true;
-  if (res.status === 403) { $('stale').hidden = false; throw new Stale('open the settings again'); }
+  catch { reachable = false; saveState('offline'); if (S) render(S); retry(); throw new Error("can't reach hold-dictate. Is it running?"); }
+  if (!reachable) { reachable = true; saveState('idle'); }
+  if (res.status === 403) { $('stale').hidden = false; saveState('offline'); throw new Stale('open the settings again'); }
   const data = await res.json().catch(() => ({ error: res.statusText }));
   if (!res.ok) throw new Error(data.error || res.statusText);
   return data;
@@ -347,7 +348,7 @@ let saveTimer;
 function saveState(kind, text) {
   const el = $('save');
   el.className = 'save ' + kind;
-  const label = { idle: 'Changes save automatically', saving: 'Saving…', saved: 'Saved', failed: text }[kind];
+  const label = { idle: 'Changes save automatically', saving: 'Saving…', saved: 'Saved', failed: text, offline: 'Not connected' }[kind];
   el.innerHTML = (kind === 'saved' ? ICON_OK : '') + '<span></span>';
   el.lastChild.textContent = label;
   clearTimeout(saveTimer);
@@ -356,7 +357,7 @@ function saveState(kind, text) {
 async function save(changes) {
   saveState('saving');
   try { S = await api('/api/config', changes); render(S); saveState('saved'); return true; }
-  catch (e) { saveState('failed', e instanceof Stale || !reachable ? 'Not saved' : `Not saved: ${e.message}`); if (S) render(S); return false; }
+  catch (e) { if (e instanceof Stale || !reachable) saveState('offline'); else saveState('failed', `Not saved: ${e.message}`); if (S) render(S); return false; }
 }
 const debounced = {};
 function saveSoon(id, value) { clearTimeout(debounced[id]); debounced[id] = setTimeout(() => save({ [id]: value() }), 700); }
@@ -382,7 +383,7 @@ let reachable = true, retryTimer = 0;
 function retry() { if (!retryTimer) retryTimer = setTimeout(() => { retryTimer = 0; refresh(); }, 3000); }
 function blocker(s) {
   const c = s.config, service = ((s.providers[c.provider] || {}).label || '').replace(/ \(.*/, '');
-  if (!reachable) return { title: 'Can\'t reach hold-dictate.', lede: `It may have quit, or it's restarting after an update. Start it again ${where(s)}, or run hold-dictate in a terminal. This page reconnects by itself.` };
+  if (!reachable) return { title: 'Can\'t reach hold-dictate.', lede: `It may have quit, or it's restarting after an update. Start it again ${where(s)}.${s.running ? ' This page reconnects when it is back.' : ''}` };
   if (!s.running) return { title: 'hold-dictate isn\'t running.', lede: 'Start it, and it also starts every time you log in.', act: 'start' };
   if (s.problem) return { title: 'The shortcut can\'t work yet.', lede: s.problem };
   if (c.provider === 'local') return s.local_installed ? null : { title: 'Install the offline model to start.', lede: 'It runs on this computer without internet. Run this in a terminal, then reload this page:', code: 'uv tool install --force "hold-dictate[local]"' };
@@ -429,7 +430,8 @@ function render(s) {
   $('overlay_size').value = c.overlay_size;
   renderUpdates(s);
   $('local_fallback').checked = c.local_fallback;
-  for (const id of ['min_hold', 'timeout', 'prompt', 'base_url', 'model']) if (document.activeElement !== $(id)) $(id).value = c[id];
+  for (const id of ['prompt', 'base_url', 'model']) if (document.activeElement !== $(id)) $(id).value = c[id]; // don't move the cursor while typing
+  for (const id of ['min_hold', 'timeout']) $(id).value = c[id]; // these save on change, so show what was kept (out-of-range values are clamped)
   $('cfgPath').textContent = s.config_path;
   drawPill();
 }
