@@ -103,9 +103,10 @@ code { font:500 .9em var(--mono); background:var(--soft); border:1px solid var(-
 .note.ok { color:var(--ok); } .note.bad { color:var(--err); } .note.wait { color:var(--muted); }
 
 /* controls */
-input[type=text], input[type=password], input[type=number], select {
+input[type=text], input[type=password], input[type=number], select, textarea {
   font:inherit; font-size:var(--t-base); width:100%; height:40px; padding:0 var(--s-3); border-radius:var(--r-md);
   border:1px solid var(--edge); background:var(--surface); color:var(--ink); }
+textarea { height:auto; padding:var(--s-2) var(--s-3); line-height:1.5; resize:vertical; }
 select { appearance:none; padding-inline-end:36px; cursor:pointer;
   background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath d='M3 4.5 6 7.5 9 4.5' fill='none' stroke='%23888' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
   background-repeat:no-repeat; background-position:right 12px center; }
@@ -143,6 +144,25 @@ input[type=number] { width:110px; }
 .switch:focus-visible { outline:2px solid var(--accent); outline-offset:2px; }
 
 /* language chips */
+/* word replacements and rules per app: rows of [this] [that] [remove] */
+.pairs { display:grid; gap:var(--s-2); }
+.pairs:empty { display:none; }
+.pair { display:flex; gap:var(--s-2); align-items:center; }
+.pair > input, .pair > select { flex:1; min-width:0; }
+.pair > .to { color:var(--muted); flex:none; }
+.btn.icon { width:32px; padding:0; display:inline-grid; place-items:center; flex:none; border-color:transparent; background:none; color:var(--muted); }
+.btn.icon:hover { color:var(--ink); border-color:var(--line-2); }
+.pair input.dup { border-color:var(--err); }
+.pairs + .note { margin-top:calc(-1 * var(--s-1)); }
+code.cmd-inline { white-space:nowrap; }
+#rulesBox { display:grid; gap:var(--s-2); }
+#appRows .pair > input { flex:.7; } /* the rule needs the room more than the app name */
+#rulesBox[inert] { opacity:.5; }
+.btn.icon svg { width:12px; height:12px; }
+.last { padding:var(--s-3) var(--s-4); border:1px solid var(--line-2); border-radius:var(--r-md); background:var(--surface); white-space:pre-wrap; overflow-wrap:anywhere; max-height:160px; overflow:auto; unicode-bidi:plaintext; }
+.last.empty { color:var(--muted); }
+.note bdi, .hint bdi { white-space:nowrap; }
+.ex { display:grid; gap:2px; margin-top:var(--s-1); }
 .chips { display:flex; flex-wrap:wrap; gap:var(--s-2); }
 .chip { font:inherit; font-size:var(--t-sm); font-weight:500; height:34px; padding:0 var(--s-4); border-radius:var(--r-pill); cursor:pointer;
   border:1px solid transparent; background:var(--soft); color:var(--ink-2); display:inline-flex; align-items:center; gap:var(--s-2); }
@@ -176,6 +196,7 @@ details[open] > summary svg { transform:rotate(90deg); }
 details .items { margin-top:var(--s-6); }
 
 .acts-end { display:flex; gap:var(--s-2); }
+.acts-start { display:flex; flex-wrap:wrap; align-items:center; gap:var(--s-2) var(--s-3); }
 .upd { display:grid; gap:var(--s-2); flex:1; min-width:0; }
 .upd .note { display:flex; align-items:center; gap:var(--s-2); font-variant-numeric:tabular-nums; }
 .upd .note svg { width:15px; height:15px; flex:none; }
@@ -207,7 +228,7 @@ details .items { margin-top:var(--s-6); }
   <div class="status" id="status"><i></i><span id="statusText"></span></div>
   <div id="readyView">
     <div class="keys" id="heroKeys"></div>
-    <p class="lede">Hold the keys and speak. Let go, and the text is typed where your cursor is.</p>
+    <p class="lede" id="heroLede"></p>
     <div class="acts">
       <button class="btn" id="recKey">Change shortcut</button>
       <span class="note" id="hotkeyMsg"></span>
@@ -264,14 +285,69 @@ details .items { margin-top:var(--s-6); }
 </section>
 
 <section class="group" aria-labelledby="h-dictate">
-  <header><h2 id="h-dictate">While you dictate</h2><p>What happens while you hold the keys.</p></header>
+  <header><h2 id="h-dictate">While you dictate</h2><p>How the shortcut works, and what happens while you talk.</p></header>
   <div class="items">
+    <div class="item">
+      <span class="label" id="l-mode">Shortcut</span>
+      <div><div class="seg" id="hotkey_mode" role="group" aria-labelledby="l-mode"><button data-v="hold">Hold to talk</button><button data-v="auto">Tap or hold</button><button data-v="toggle">Tap on/off</button></div></div>
+      <p class="hint" id="modeHint"></p>
+    </div>
+    <div class="row" id="silenceRow"><label class="text" for="silence_stop"><b>Stop after silence</b><span class="hint" id="silenceHint"></span></label><input type="number" id="silence_stop" min="0" max="60" step="0.5"></div>
     <div class="item">
       <span class="label" id="l-bg">Music and videos</span>
       <div><div class="seg" id="background_audio" role="group" aria-labelledby="l-bg"><button data-v="lower">Turn down</button><button data-v="mute">Silence</button><button data-v="off">Leave as is</button></div></div>
       <p class="hint" id="bgHint"></p>
     </div>
-    <label class="row"><span class="text"><b>Sounds</b><span class="hint">A short sound when recording starts and stops.</span></span><input type="checkbox" class="switch" id="beeps"></label>
+    <label class="row"><span class="text"><b>Sounds</b><span class="hint">A short sound when recording starts and stops, and when something goes wrong.</span></span><input type="checkbox" class="switch" id="beeps"></label>
+  </div>
+</section>
+
+<section class="group" aria-labelledby="h-text">
+  <header><h2 id="h-text">Text</h2><p>Clean-ups made before the text is typed.</p></header>
+  <div class="items">
+    <label class="row"><span class="text"><b>Drop phrases made up from noise</b><span class="hint">From silence or noise, the transcriber sometimes writes things like “Thanks for watching”.</span></span><input type="checkbox" class="switch" id="drop_hallucinations"></label>
+    <label class="row"><span class="text"><b>Remove filler words</b><span class="hint">um, uh, <bdi>אה</bdi>, <bdi>אממ</bdi></span></span><input type="checkbox" class="switch" id="remove_fillers"></label>
+    <div class="item" id="fillerRow"><label class="label" for="filler_words">Filler words</label><textarea id="filler_words" dir="auto" rows="2" spellcheck="false"></textarea><p class="hint">Separate them with commas. <button class="link" id="resetFillers">Back to the built-in list</button></p></div>
+    <div class="item">
+      <label class="row"><span class="text"><b>Say punctuation out loud</b><span class="hint">Say the mark and it's typed:</span></span><input type="checkbox" class="switch" id="spoken_punctuation"></label>
+      <div class="hint ex">
+        <span>“comma” or “<bdi>פסיק</bdi>” → ,</span>
+        <span>“period” or “<bdi>נקודה</bdi>” → .</span>
+        <span>“question mark” or “<bdi>סימן שאלה</bdi>” → ?</span>
+        <span>“new line” or “<bdi>שורה חדשה</bdi>” → a new line</span>
+      </div>
+      <p class="note wait" id="spokenWarn">The word turns into the mark wherever it's said, so “<bdi>נקודה חשובה</bdi>” becomes “<bdi>. חשובה</bdi>”.</p>
+    </div>
+    <div class="item">
+      <span class="label" id="l-words">Word replacements</span>
+      <p class="hint">For words the transcriber keeps getting wrong. Leave the second box empty to delete the word. Hebrew words also match with a prefix such as <bdi>ב</bdi>, <bdi>ל</bdi> or <bdi>ו</bdi>.</p>
+      <div class="pairs" id="wordRows" role="group" aria-labelledby="l-words"></div>
+      <p class="note bad" id="wordDup" hidden></p>
+      <div><button class="link" id="addWord">+ Add a word</button></div>
+    </div>
+  </div>
+</section>
+
+<section class="group" aria-labelledby="h-paste">
+  <header><h2 id="h-paste">Pasting</h2><p>Where the text goes once it's ready.</p></header>
+  <div class="items">
+    <div class="item" id="lastRow">
+      <span class="label">Last dictation</span>
+      <div class="last" id="lastText"></div>
+      <div class="acts-start"><button class="btn small" id="copyLast">Copy</button><span class="note" id="lastMsg"></span></div>
+      <p class="hint">To paste it again anywhere, give <code class="cmd-inline">hold-dictate paste-last</code> a keyboard shortcut in your system settings.</p>
+    </div>
+    <label class="row"><span class="text"><b>Press Enter after pasting</b><span class="hint" id="submitHint">In chat apps this sends the message at once. A rule below can turn it on or off for one app.</span></span><input type="checkbox" class="switch" id="auto_submit"></label>
+    <div class="item">
+      <span class="label" id="l-rules">Rules per app</span>
+      <p class="note bad" id="noFocus">This system can't tell which app is in front (GNOME or KDE on Wayland), so rules per app don't work here.</p>
+      <p class="hint">A rule applies when its name is part of the app's name, in any case.</p>
+      <div id="rulesBox">
+      <div class="pairs" id="appRows" role="group" aria-labelledby="l-rules"></div>
+      <p class="note bad" id="appDup" hidden></p>
+      <div class="acts-start"><button class="link" id="addApp">+ Add a rule</button><button class="link" id="addLastApp" hidden></button></div>
+      </div>
+    </div>
   </div>
 </section>
 
@@ -307,12 +383,13 @@ details .items { margin-top:var(--s-6); }
 <section class="group" aria-labelledby="h-adv">
   <header><h2 id="h-adv">Advanced</h2></header>
   <div class="items">
-    <details id="adv"><summary><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M6 3.5 10.5 8 6 12.5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>Spelling hint, offline fallback and timing</summary>
+    <details id="adv"><summary><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M6 3.5 10.5 8 6 12.5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>Spelling hint, offline fallback, timing and text hook</summary>
       <div class="items">
         <div class="item"><label class="label" for="prompt">Spelling hint</label><input type="text" id="prompt"><p class="hint">Words and names the transcriber should spell your way, for example Kubernetes or your colleagues' names.</p></div>
         <label class="row"><span class="text"><b>Use the offline model if the service fails</b><span class="hint">Only when the offline model is installed.</span></span><input type="checkbox" class="switch" id="local_fallback"></label>
-        <div class="row"><label class="text" for="min_hold"><b>Ignore taps shorter than</b><span class="hint">Seconds. Stops a quick press from recording.</span></label><input type="number" id="min_hold" min="0" max="2" step="0.05"></div>
+        <div class="row"><label class="text" for="min_hold"><b>Ignore taps shorter than</b><span class="hint">Seconds. A shorter press doesn't record.</span></label><input type="number" id="min_hold" min="0" max="2" step="0.05"></div>
         <div class="row"><label class="text" for="timeout"><b>Give up on the service after</b><span class="hint">Seconds without an answer.</span></label><input type="number" id="timeout" min="3" max="120" step="1"></div>
+        <div class="item"><label class="label" for="post_hook">Text hook</label><input type="text" id="post_hook" class="mono" spellcheck="false" placeholder="a shell command"><p class="hint">A command that gets the text on its input; what it prints is typed instead. No output keeps the text, and exit code 77 types nothing. It has 5 seconds, and HOLD_DICTATE_APP and HOLD_DICTATE_PROVIDER tell it the app and the service.</p></div>
       </div>
     </details>
   </div>
@@ -371,7 +448,8 @@ const pretty = p => ({ alt: MAC ? 'Option' : 'Alt', ctrl: 'Ctrl', shift: 'Shift'
 function keycaps(parts, tail) {
   const el = $('heroKeys'); el.innerHTML = '';
   const word = t => { const s = document.createElement('span'); s.className = 'word'; s.textContent = t; return s; };
-  el.append(word('Hold'));
+  const mode = S ? S.config.hotkey_mode : 'hold';
+  el.append(word({ auto: 'Tap or hold', toggle: 'Tap' }[mode] || 'Hold'));
   parts.forEach((p, i) => {
     const c = document.createElement('kbd'); c.className = 'cap'; c.textContent = pretty(p);
     if (!i) { el.append(c); return; }
@@ -381,7 +459,7 @@ function keycaps(parts, tail) {
     pair.append(plus, c); el.append(pair);
   });
   if (tail) { const g = document.createElement('span'); g.className = 'ghost'; g.textContent = tail; el.append(g); }
-  else el.append(word('and talk.'));
+  else el.append(word(mode === 'toggle' ? 'to start and stop.' : 'and talk.'));
 }
 
 const where = s => s.platform.startsWith('linux') ? 'from your app menu (hold-dictate settings)' : s.platform === 'darwin' ? 'from the hold-dictate icon in the menu bar' : 'from the hold-dictate icon next to the clock';
@@ -430,6 +508,8 @@ function render(s) {
   status(s);
   $('reopenWhere').textContent = where(s);
   if (!recording) keycaps(c.hotkey.split('+'));
+  $('heroLede').textContent = { auto: 'Tap the keys to start and tap again to stop, or hold them and let go when you\'re done. The text is typed where your cursor is.',
+    toggle: 'Tap the keys, speak, and tap them again. The text is typed where your cursor is.' }[c.hotkey_mode] || 'Hold the keys and speak. Let go, and the text is typed where your cursor is.';
   if (!recording && s.hotkey_problem) { $('hotkeyMsg').className = 'note bad'; $('hotkeyMsg').textContent = s.hotkey_problem; }
   else if (!recording && $('hotkeyMsg').classList.contains('bad')) $('hotkeyMsg').textContent = '';
   renderService(s);
@@ -437,8 +517,8 @@ function render(s) {
   document.querySelectorAll('#background_audio button').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.v === c.background_audio)));
   $('bgHint').textContent = !s.ducking ? 'This needs pactl (from the pulseaudio-utils package). Install it to use this.'
     : c.background_audio === 'off' ? 'Other apps keep playing as usual.'
-    : s.platform === 'darwin' ? `Spotify and Music get ${c.background_audio === 'mute' ? 'silent' : 'quieter'} while you hold the keys, and come back when you let go. macOS can't change other apps' volume.`
-    : `Other apps get ${c.background_audio === 'mute' ? 'silent' : 'quieter'} while you hold the keys, and come back when you let go. Headphones and Bluetooth stay as they are: the microphone can't hear them.`;
+    : s.platform === 'darwin' ? `Spotify and Music get ${c.background_audio === 'mute' ? 'silent' : 'quieter'} while you record, and come back when you stop. macOS can't change other apps' volume.`
+    : `Other apps get ${c.background_audio === 'mute' ? 'silent' : 'quieter'} while you record, and come back when you stop. Headphones and Bluetooth stay as they are: the microphone can't hear them.`;
   $('beeps').checked = c.beeps;
   $('lookGroup').hidden = !s.overlay;
   $('overlay_bg').value = c.overlay_bg; $('overlay_bars').value = c.overlay_bars;
@@ -447,8 +527,11 @@ function render(s) {
   $('overlay_size').value = c.overlay_size;
   renderUpdates(s);
   $('local_fallback').checked = c.local_fallback;
-  for (const id of ['prompt', 'base_url', 'model']) if (document.activeElement !== $(id)) $(id).value = c[id]; // don't move the cursor while typing
-  for (const id of ['min_hold', 'timeout']) $(id).value = c[id]; // these save on change, so show what was kept (out-of-range values are clamped)
+  for (const id of ['prompt', 'base_url', 'model', 'post_hook']) if (document.activeElement !== $(id)) $(id).value = c[id];
+  if (document.activeElement !== $('filler_words')) $('filler_words').value = c.filler_words || s.fillers_default.join(', '); // the built-in list, to edit
+  fitFillers(); // don't move the cursor while typing
+  for (const id of ['min_hold', 'timeout', 'silence_stop']) $(id).value = c[id];
+  renderMode(s); renderText(s); renderPasting(s); // these save on change, so show what was kept (out-of-range values are clamped)
   $('cfgPath').textContent = s.config_path;
   drawPill();
 }
@@ -555,13 +638,13 @@ function renderLanguages(s) {
 $('moreLang').addEventListener('change', async () => { const v = $('moreLang').value; if (v) { await save({ languages: [...S.config.languages, v] }); $('moreLang').focus(); } });
 
 // ---- simple fields ----
-for (const id of ['base_url', 'model', 'prompt']) {
+for (const id of ['base_url', 'model', 'prompt', 'post_hook']) {
   $(id).addEventListener('input', () => saveSoon(id, () => $(id).value));
   $(id).addEventListener('change', () => { clearTimeout(debounced[id]); save({ [id]: $(id).value }); });
 }
-for (const id of ['min_hold', 'timeout']) $(id).addEventListener('change', () => save({ [id]: parseFloat($(id).value) }));
-for (const id of ['beeps', 'auto_update', 'local_fallback']) $(id).addEventListener('change', () => save({ [id]: $(id).checked }));
-for (const id of ['background_audio', 'overlay_style', 'overlay_position']) document.querySelectorAll(`#${id} button`).forEach(b => b.onclick = () => save({ [id]: b.dataset.v }));
+for (const id of ['min_hold', 'timeout', 'silence_stop']) $(id).addEventListener('change', () => save({ [id]: parseFloat($(id).value) }));
+for (const id of ['beeps', 'auto_update', 'local_fallback', 'drop_hallucinations', 'remove_fillers', 'spoken_punctuation', 'auto_submit']) $(id).addEventListener('change', () => save({ [id]: $(id).checked }));
+for (const id of ['hotkey_mode', 'background_audio', 'overlay_style', 'overlay_position']) document.querySelectorAll(`#${id} button`).forEach(b => b.onclick = () => save({ [id]: b.dataset.v }));
 
 // ---- shortcut recorder ----
 let recording = false;
@@ -603,6 +686,102 @@ window.addEventListener('keydown', e => {
   $('heroKeys').classList.remove('rec'); $('recKey').textContent = 'Change shortcut'; $('hotkeyMsg').textContent = '';
   save({ hotkey: [...mods, key].join('+') });
 }, true);
+
+// ---- the shortcut mode, text clean-ups and pasting ----
+function renderMode(s) {
+  const c = s.config;
+  document.querySelectorAll('#hotkey_mode button').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.v === c.hotkey_mode)));
+  $('modeHint').textContent = { hold: 'Records while you hold the keys, and stops when you let go.',
+    auto: 'A quick tap starts recording and the next tap stops it. Holding longer works like Hold to talk.',
+    toggle: 'Each tap starts or stops recording.' }[c.hotkey_mode];
+  $('silenceRow').hidden = c.hotkey_mode === 'hold';
+  $('silenceHint').textContent = c.silence_stop > 0 ? 'Seconds. It stops by itself after this much quiet once you\'ve spoken, or after 8 seconds if you say nothing.' : 'Seconds; 0 is off, so it stops only when you tap again.';
+}
+function renderText(s) {
+  const c = s.config;
+  for (const id of ['drop_hallucinations', 'remove_fillers', 'spoken_punctuation', 'auto_submit']) $(id).checked = c[id];
+  $('fillerRow').hidden = !c.remove_fillers;
+  requestAnimationFrame(fitFillers);
+  $('spokenWarn').hidden = !c.spoken_punctuation;
+  renderPairs('word_overrides', c.word_overrides);
+}
+function renderPasting(s) {
+  const c = s.config;
+  $('lastRow').hidden = !s.running;
+  $('lastText').textContent = s.last.text || 'Nothing dictated yet.';
+  $('lastText').classList.toggle('empty', !s.last.text);
+  $('copyLast').disabled = !s.last.text;
+  renderPairs('app_rules', c.app_rules);
+  const app = (s.last.app || '').trim().toLowerCase(), has = app && Object.keys(c.app_rules).some(k => k === app);
+  $('addLastApp').hidden = !app || has || !s.focus_detect;
+  $('addLastApp').textContent = `Add a rule for ${app}`;
+  $('noFocus').hidden = s.focus_detect;
+  $('rulesBox').inert = !s.focus_detect;
+  $('submitHint').textContent = 'In chat apps this sends the message at once.' + (s.focus_detect ? ' A rule below can turn it on or off for one app.' : '');
+}
+const RULES = { paste: 'Paste, no Enter', submit: 'Paste + Enter', shift: (MAC ? 'Cmd' : 'Ctrl') + '+Shift+V paste', clipboard: 'Copy only', off: 'Do nothing' };
+const EDITORS = {
+  word_overrides: { box: 'wordRows', key: 'Heard', value: () => Object.assign(document.createElement('input'), { type: 'text', dir: 'auto', placeholder: 'Written' }) },
+  app_rules: { box: 'appRows', key: 'App name', value: () => { const sel = document.createElement('select'); for (const [v, label] of Object.entries(RULES)) sel.add(new Option(label, v)); return sel; } },
+};
+function pairRow(field, k, v) {
+  const e = EDITORS[field], row = document.createElement('div');
+  row.className = 'pair';
+  const key = Object.assign(document.createElement('input'), { type: 'text', dir: 'auto', value: k, placeholder: e.key });
+  key.setAttribute('aria-label', e.key);
+  const val = e.value(); val.value = v; val.setAttribute('aria-label', field === 'app_rules' ? 'What to do' : 'Written');
+  const x = Object.assign(document.createElement('button'), { className: 'btn icon', innerHTML: ICON_X, title: 'Remove' });
+  x.setAttribute('aria-label', 'Remove');
+  x.onclick = () => { const next = row.nextElementSibling || row.previousElementSibling; row.remove(); savePairs(field); (next ? next.querySelector('input') : $(field === 'app_rules' ? 'addApp' : 'addWord')).focus(); };
+  row.append(key);
+  if (field === 'word_overrides') row.append(Object.assign(document.createElement('span'), { className: 'to', textContent: '→' }));
+  row.append(val, x);
+  return row;
+}
+function pairsOf(field) {
+  const out = {};
+  for (const row of $(EDITORS[field].box).children) {
+    const [k, v] = row.querySelectorAll('input, select');
+    if (k.value.trim()) out[k.value.trim()] = v.value.trim();
+  }
+  return out;
+}
+// The same word or app twice can't both be saved: say so, and save nothing until it is fixed
+function duplicates(field) {
+  const seen = new Set(), dups = [];
+  for (const row of $(EDITORS[field].box).children) {
+    const k = row.querySelector('input'), name = k.value.trim().toLowerCase(); // both are matched in any case
+    const dup = !!name && seen.has(name); seen.add(name);
+    k.classList.toggle('dup', dup); if (dup) dups.push(k.value.trim());
+  }
+  const note = $(field === 'app_rules' ? 'appDup' : 'wordDup');
+  note.hidden = !dups.length; note.textContent = dups.length ? `“${dups[0]}” is in the list twice. Change or remove one to save.` : '';
+  return dups.length;
+}
+function savePairs(field) { if (duplicates(field)) return; const v = pairsOf(field); if (JSON.stringify(v) !== JSON.stringify(S.config[field])) save({ [field]: v }); }
+function renderPairs(field, values) {
+  const box = $(EDITORS[field].box);
+  if (box.contains(document.activeElement)) return; // never rebuild under the cursor
+  if (box.querySelector('.dup') || JSON.stringify(pairsOf(field)) === JSON.stringify(values)) return; // keeps rows still being filled in
+  box.textContent = '';
+  for (const [k, v] of Object.entries(values)) box.append(pairRow(field, k, v));
+}
+function addPair(field, k, v) { const row = pairRow(field, k, v); $(EDITORS[field].box).append(row); row.querySelector(k ? 'select, input:not(:first-child)' : 'input').focus(); return row; }
+for (const field of Object.keys(EDITORS)) { $(EDITORS[field].box).addEventListener('change', () => savePairs(field)); $(EDITORS[field].box).addEventListener('input', () => duplicates(field)); }
+function fitFillers() { const t = $('filler_words'); if (!t.offsetParent) return; t.style.height = 'auto'; t.style.height = t.scrollHeight + 2 + 'px'; }
+$('filler_words').addEventListener('input', fitFillers); addEventListener('resize', fitFillers);
+const words = v => v.split(',').map(w => w.trim()).filter(Boolean).join(', ');
+$('filler_words').addEventListener('input', () => saveSoon('filler_words', () => { const v = words($('filler_words').value); return v === S.fillers_default.join(', ') ? '' : v; }));
+$('resetFillers').onclick = () => { $('filler_words').value = S.fillers_default.join(', '); save({ filler_words: '' }); };
+$('addWord').onclick = () => addPair('word_overrides', '', '');
+$('addApp').onclick = () => addPair('app_rules', '', 'paste');
+$('addLastApp').onclick = () => { addPair('app_rules', S.last.app.trim().toLowerCase(), 'paste'); savePairs('app_rules'); };
+$('copyLast').onclick = async () => {
+  const msg = $('lastMsg');
+  try { const r = await api('/api/last/copy', {}); msg.className = r.message ? 'note bad' : 'note ok'; msg.textContent = r.message || 'Copied'; }
+  catch (e) { msg.className = 'note bad'; msg.textContent = e.message; }
+  setTimeout(() => { msg.textContent = ''; }, 2500);
+};
 
 // ---- updates ----
 function renderUpdates(s) {

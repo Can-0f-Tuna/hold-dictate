@@ -52,6 +52,29 @@ def level_of(samples: np.ndarray) -> float:
     return min(1.0, max(0.0, (20 * np.log10(rms) + 55) / 40))
 
 
+class VoiceMeter:
+    """Tells speech from room noise in the stream of levels, to stop a recording once you go quiet.
+
+    The noise floor follows the quietest recent level: it drops at once and creeps up slowly, so a noisy
+    room is learned within seconds while the gaps between words keep pulling it back down."""
+
+    MARGIN = 0.25  # about 10 dB above the floor counts as speech
+
+    def __init__(self):
+        self.smooth = None
+        self.floor = 0.0
+        self.heard = False  # any speech yet
+        self.last = 0.0  # monotonic time of the last speech
+
+    def feed(self, level: float, now: float):
+        if self.smooth is None:  # a low start, so talking right away is not taken for room noise
+            self.smooth, self.floor = level, min(level, 0.2)
+        self.smooth += (level - self.smooth) * 0.3
+        self.floor = min(self.floor + 0.001, self.smooth)
+        if self.smooth > self.floor + self.MARGIN:
+            self.heard, self.last = True, now
+
+
 def speech_only(audio: np.ndarray, pad_ms=200, gap_ms=500, frame_ms=30):
     """Drops silence so it costs nothing and cannot turn into hallucinated words. None if no speech.
 

@@ -218,3 +218,57 @@ def test_install_progress_follows_uv(monkeypatch):
     monkeypatch.setattr(updater.subprocess, "Popen", popen)
     assert u._run_install(["uv"]) is None
     assert seen == [30, 40, 85, 95]
+
+
+def test_word_overrides_and_app_rules_persist(server):
+    code, state = call(server, "/api/config", {
+        "word_overrides": {" gitub ": "GitHub", "um so": "", " ": "x"},
+        "app_rules": {" Slack ": "submit", "Terminal": "shift"},
+        "hotkey_mode": "auto", "silence_stop": 2.5, "post_hook": "  tr a-z A-Z  ",
+    })
+    assert code == 200
+    assert state["config"]["word_overrides"] == {"gitub": "GitHub", "um so": ""}
+    assert state["config"]["app_rules"] == {"slack": "submit", "terminal": "shift"}
+    on_disk = config.load(config.config_path())
+    assert on_disk.word_overrides == {"gitub": "GitHub", "um so": ""}
+    assert on_disk.app_rules == {"slack": "submit", "terminal": "shift"}
+    assert on_disk.hotkey_mode == "auto" and on_disk.silence_stop == 2.5 and on_disk.post_hook == "tr a-z A-Z"
+
+
+@pytest.mark.parametrize("bad", [{"app_rules": {"slack": "enter"}}, {"hotkey_mode": "press"}, {"word_overrides": {"a": 1}}, {"app_rules": "slack"}])
+def test_save_rejects_bad_new_values(server, bad):
+    code, body = call(server, "/api/config", bad)
+    assert code == 400 and body["error"]
+    assert server.cfg.app_rules == {} and server.cfg.hotkey_mode == "hold"
+
+
+def test_silence_stop_is_clamped(server):
+    assert call(server, "/api/config", {"silence_stop": 500})[1]["config"]["silence_stop"] == 60
+    assert call(server, "/api/config", {"silence_stop": -3})[1]["config"]["silence_stop"] == 0
+
+
+def test_last_dictation_without_session(server):
+    _, state = call(server, "/api/state")
+    assert state["last"] == {"text": "", "app": ""}
+    assert "um" in state["fillers_default"] and isinstance(state["focus_detect"], bool)
+    assert call(server, "/api/last/copy", {}) == (200, {"message": "hold-dictate is not running"})
+    assert call(server, "/api/last/paste", {}) == (200, {"message": "hold-dictate is not running"})
+
+
+def test_last_dictation_with_session(tmp_path, monkeypatch):
+    monkeypatch.setenv("HOLD_DICTATE_CONFIG_DIR", str(tmp_path))
+    done = []
+    session = type("Session", (), {
+        "last_text": "שלום world", "last_app": "slack",
+        "copy_last": lambda self: done.append("copy") or "",
+        "paste_last": lambda self: done.append("paste") or "nothing to paste",
+    })()
+    s = SettingsServer(Config(), port=0, session=session).start()
+    try:
+        _, state = call(s, "/api/state")
+        assert state["last"] == {"text": "שלום world", "app": "slack"}
+        assert call(s, "/api/last/copy", {}) == (200, {"message": ""})
+        assert call(s, "/api/last/paste", {}) == (200, {"message": "nothing to paste"})
+        assert done == ["copy", "paste"]
+    finally:
+        s.stop()

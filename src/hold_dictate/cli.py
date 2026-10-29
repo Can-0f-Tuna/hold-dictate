@@ -140,7 +140,8 @@ def cmd_file(args) -> int:
         if speech is None:
             print("(no speech found)")
             return 0
-        print(transcribe(cfg, LocalTranscriber(cfg), speech)[0])
+        from .textproc import clean
+        print(clean(transcribe(cfg, LocalTranscriber(cfg), speech)[0], cfg) or "(nothing to paste)")
     except (TranscribeError, ValueError, OSError, EOFError, audio.wave.Error) as e:
         print(f"hold-dictate: {e}", file=sys.stderr)
         return 1
@@ -174,27 +175,46 @@ def cmd_settings(args) -> int:
     return 0
 
 
-def cmd_update(_args) -> int:
-    """Installs the latest release in the running hold-dictate (the pill's "!" tab runs this)."""
-    import webbrowser
+def _daemon(path: str) -> dict | None:
+    """POSTs to the running hold-dictate's local API. None when it is not running."""
     from .settings_ui import running_url, runtime_file
-    url = running_url()
-    if not url:
-        print("hold-dictate is not running. Start it, or run the install script again to update.")
-        return 1
+    if not running_url():
+        return None
     info = json.loads(runtime_file().read_text(encoding="utf-8"))
     request = urllib.request.Request(
-        f"http://127.0.0.1:{info['port']}/api/update/install", data=b"{}", method="POST",
+        f"http://127.0.0.1:{info['port']}{path}", data=b"{}", method="POST",
         headers={"X-Token": info["token"], "Content-Type": "application/json"},
     )
     with urllib.request.urlopen(request, timeout=10) as response:
-        state = json.load(response)
+        return json.load(response)
+
+
+def cmd_update(_args) -> int:
+    """Installs the latest release in the running hold-dictate (the pill's "!" tab runs this)."""
+    import webbrowser
+    from .settings_ui import running_url
+    state = _daemon("/api/update/install")
+    if state is None:
+        print("hold-dictate is not running. Start it, or run the install script again to update.")
+        return 1
     problem = state["update"]["can_update"]
     if problem:  # cannot install itself here: the settings page explains what to do
         print(f"Cannot update automatically: {problem}. Opening the settings.")
-        webbrowser.open(url)
+        webbrowser.open(running_url())
         return 1
     print(f"Installing {state['update']['latest'] or 'the latest version'}; hold-dictate restarts when it is done.")
+    return 0
+
+
+def cmd_last(args) -> int:
+    """Pastes or copies the last dictation again. Bind `hold-dictate paste-last` to a key to use it anywhere."""
+    result = _daemon(f"/api/last/{args.action}")
+    if result is None:
+        print("hold-dictate is not running.")
+        return 1
+    if result.get("message"):
+        print(f"hold-dictate: {result['message']}", file=sys.stderr)
+        return 1
     return 0
 
 
@@ -236,6 +256,8 @@ def main(argv=None) -> int:
     f.add_argument("path")
     f.set_defaults(fn=cmd_file)
     sub.add_parser("update", help="install the latest release now").set_defaults(fn=cmd_update)
+    for action in ("paste", "copy"):
+        sub.add_parser(f"{action}-last", help=f"{action} the last dictation again").set_defaults(fn=cmd_last, action=action)
     sub.add_parser("config", help="print the config file path").set_defaults(fn=cmd_config)
     sv = sub.add_parser("service", help="manage start-at-login")
     sv.add_argument("action", choices=["install", "uninstall", "status"])

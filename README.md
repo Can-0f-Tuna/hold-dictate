@@ -30,10 +30,13 @@ A local page at `http://127.0.0.1:47811` that only this computer can open. Open 
 
 - speech service and API key (with a check that the key works)
 - the model: Automatic uses the one we recommend for that service; **Choose another** lets you pick one
-- the languages you speak (pick as many as you like, for example Hebrew and English) and the hold-to-talk hotkey (press the keys to record it)
+- the languages you speak (pick as many as you like, for example Hebrew and English), the hotkey (press the keys to record it), and how it works: **hold** to talk (the default), **tap or hold** (a quick tap starts, the next tap stops; holding longer works like hold) or **tap to start and stop**. In the tap modes it can stop by itself after a few seconds of quiet
 - what happens to music and videos while you dictate: turned down (the default), silenced, or left alone
 - sounds, and the recording pill: style (Dots, the default, or the original Lines), colour, position and size
 - automatic updates
+- text clean-up: drop phrases Whisper invents from noise ("Thanks for watching", on by default), remove filler words (um, uh, אה, אממ), turn spoken punctuation into symbols ("comma" / "פסיק", "new line" / "שורה חדשה"), and your own word replacements (a Hebrew word also matches with a joined prefix: "ורסל" → "Vercel" turns "בורסל" into "ב-Vercel")
+- pasting: press Enter after pasting, and rules per app (paste without Enter, paste and press Enter, Ctrl+Shift+V, copy only, or do nothing). The page shows the last dictation and which app it went to
+- a text hook (Advanced): a shell command that gets the text on stdin; what it prints is pasted instead, empty output keeps the text, exit code 77 pastes nothing. It has 5 seconds and sees `HOLD_DICTATE_APP` and `HOLD_DICTATE_PROVIDER`
 
 Changes apply immediately; no restart needed. Prefer the terminal? `hold-dictate setup` still works.
 
@@ -70,9 +73,13 @@ If the cloud request fails and the `local` extra is installed, it falls back to 
 | `hold-dictate transcribe FILE.wav` | Transcribes a file |
 | `hold-dictate service install\|uninstall\|status` | Start at login |
 | `hold-dictate update` | Installs the latest release now |
+| `hold-dictate paste-last` | Pastes the last dictation again (bind it to a key in your compositor or desktop) |
+| `hold-dictate copy-last` | Copies the last dictation to the clipboard (also in the tray menu) |
 | `hold-dictate config` | Prints the config file path |
 
-Settings live in a TOML file: `~/.config/hold-dictate/config.toml` (Linux), `~/Library/Application Support/hold-dictate/config.toml` (macOS), `%APPDATA%\hold-dictate\config.toml` (Windows). Options: `provider`, `api_key`, `base_url`, `model`, `languages` (comma-separated codes such as `"he,en"`; empty means any language), `prompt`, `hotkey`, `local_model`, `local_fallback`, `beeps`, `background_audio` (`lower`, `mute` or `off`), `min_hold`, `timeout`, `auto_update`, `overlay_bg`, `overlay_bars`, `overlay_position`, `overlay_size`.
+Settings live in a TOML file: `~/.config/hold-dictate/config.toml` (Linux), `~/Library/Application Support/hold-dictate/config.toml` (macOS), `%APPDATA%\hold-dictate\config.toml` (Windows). Options: `provider`, `api_key`, `base_url`, `model`, `languages` (comma-separated codes such as `"he,en"`; empty means any language), `prompt`, `hotkey`, `hotkey_mode` (`hold`, `auto` or `toggle`), `silence_stop` (seconds, 0 = off), `local_model`, `local_fallback`, `beeps`, `background_audio` (`lower`, `mute` or `off`), `min_hold`, `timeout`, `auto_update`, `overlay_bg`, `overlay_bars`, `overlay_position`, `overlay_size`, `drop_hallucinations`, `remove_fillers`, `filler_words` (comma-separated, empty = built-in), `spoken_punctuation`, `word_overrides` (a table: `{ "get hub" = "GitHub" }`), `auto_submit`, `app_rules` (a table: `{ "slack" = "submit", "keepassxc" = "off" }`; values `paste`, `submit`, `shift`, `clipboard`, `off`; a name matches part of the app name), `post_hook`.
+
+The app is told apart by its window class on X11, Hyprland, Sway and niri, by its name on macOS and its program name on Windows. GNOME and KDE on Wayland do not say which window is focused, so per-app rules do not apply there.
 
 Hotkey format: modifiers (`alt`, `ctrl`, `shift`, `super`) plus one key (`space`, a-z, 0-9, f1-f12), for example `ctrl+alt+d`.
 

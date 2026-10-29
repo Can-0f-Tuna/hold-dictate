@@ -1,15 +1,14 @@
-"""The dictation loop: hotkey down -> record, hotkey up -> transcribe -> paste."""
+"""The dictation loop: hotkey down -> record, hotkey up (or the next tap) -> transcribe -> clean -> paste."""
 import signal
 import sys
 import threading
 import time
 
-from . import audio
+from . import audio, paste, textproc
 from .ducking import Ducker
 from .config import Config
 from .feedback import Feedback
 from .hotkey import HoldDetector, choose_backend, parse_hotkey
-from .paste import paste_text
 from .providers import LocalTranscriber, TranscribeError, transcribe_api
 
 
@@ -26,39 +25,92 @@ def transcribe(cfg: Config, local: LocalTranscriber, speech) -> tuple[str, str]:
         raise
 
 
+TAP_SECONDS = 0.4  # auto mode: a press shorter than this keeps recording until the next press
+NO_SPEECH_SECONDS = 8.0  # with silence_stop on, a recording where nothing is said stops after this
+
+
 class Dictation:
-    def __init__(self, cfg: Config, feedback: Feedback, recorder_factory=None, paster=None, on_no_key=None, ducker=None):
+    def __init__(self, cfg: Config, feedback: Feedback, recorder_factory=None, paster=None, on_no_key=None, ducker=None,
+                 focus=None, copier=None):
         self.cfg = cfg
         self.ducker = ducker or Ducker(cfg)
         self.on_no_key = on_no_key
         self.fb = feedback
         self.local = LocalTranscriber(cfg)
         self.recorder_factory = recorder_factory or audio.Recorder
-        self.paster = paster or paste_text
+        self.paster = paster or paste.paste_text
+        self.focus = focus or paste.focused_app
+        self.copier = copier or paste.copy_text
         self.recorder = None
+        self.latched = False  # auto and toggle: the key is up but the recording goes on
+        self.voice = audio.VoiceMeter()
         self.pressed_at = 0.0
         self.last_used = time.monotonic()
+        self.last_text = ""  # the last dictation, kept in memory only, for paste-last and copy-last
+        self.last_app = ""  # the app it went to, offered on the settings page for a per-app rule
+        self.lock = threading.RLock()
         self.paste_lock = threading.Lock()
         self.threads: list[threading.Thread] = []
 
-    # Called by the hotkey backend.
+    # Called by the hotkey backend: "start" when the hotkey goes down, "stop" when it comes up.
     def on_action(self, action: str):
-        if action == "start" and self.recorder is None:
-            if self.cfg.provider != "local" and not self.cfg.effective_key():
-                self.fb.error("no API key yet. Add one in the settings.")
-                if self.on_no_key:
-                    self.on_no_key()
+        with self.lock:
+            mode = self.cfg.hotkey_mode
+            if action == "start":
+                if self.recorder is None:
+                    self.begin()
+                elif mode != "hold":
+                    self.finish()
+            elif action == "stop" and self.recorder is not None:
+                held = time.monotonic() - self.pressed_at
+                if mode not in ("auto", "toggle") or (mode == "auto" and held >= TAP_SECONDS):
+                    self.finish()
+                else:
+                    self.latched = True
+
+    def _level(self, value: float):
+        self.fb.level(value)
+        self.voice.feed(value, time.monotonic())
+
+    def begin(self):
+        if self.cfg.provider != "local" and not self.cfg.effective_key():
+            self.fb.error("no API key yet. Add one in the settings.")
+            if self.on_no_key:
+                self.on_no_key()
+            return
+        self.voice = audio.VoiceMeter()
+        try:
+            self.recorder = self.recorder_factory(self._level)
+        except audio.MicError as e:
+            self.fb.error(str(e))
+            return
+        self.latched = False
+        self.fb.recording()
+        self.ducker.duck()
+        self.pressed_at = self.last_used = time.monotonic()
+        if self.cfg.hotkey_mode != "hold" and self.cfg.silence_stop > 0:
+            threading.Thread(target=self._watch_silence, args=(self.recorder,), daemon=True).start()
+
+    def _watch_silence(self, recorder):
+        """While a tapped recording runs, stops it once you have been quiet for silence_stop seconds."""
+        while True:
+            time.sleep(0.1)
+            with self.lock:
+                if self.recorder is not recorder:
+                    return
+                if not self.latched:
+                    continue
+                limit = self.cfg.silence_stop if self.voice.heard else max(self.cfg.silence_stop, NO_SPEECH_SECONDS)
+                if time.monotonic() - (self.voice.last if self.voice.heard else self.pressed_at) >= limit:
+                    self.finish()
+                    return
+
+    def finish(self):
+        """Stops the recording, if any, and transcribes it in the background."""
+        with self.lock:
+            if self.recorder is None:
                 return
-            try:
-                self.recorder = self.recorder_factory(self.fb.level)
-            except audio.MicError as e:
-                self.fb.error(str(e))
-                return
-            self.fb.recording()
-            self.ducker.duck()
-            self.pressed_at = self.last_used = time.monotonic()
-        elif action == "stop" and self.recorder is not None:
-            recording, self.recorder = self.recorder.stop(), None
+            recording, self.recorder, self.latched = self.recorder.stop(), None, False
             self.ducker.restore()
             if time.monotonic() - self.pressed_at < self.cfg.min_hold:
                 self.fb.done()
@@ -75,22 +127,57 @@ class Dictation:
         started = time.monotonic()
         try:
             speech = audio.speech_only(recording)
-            text, source = ("", "-") if speech is None else self.transcribe(speech)
+            raw, source = ("", "-") if speech is None else self.transcribe(speech)
         except Exception as e:
             self.fb.error(str(e))
             return
         self.last_used = time.monotonic()
-        print(f"transcribed ({source}) in {self.last_used - started:.1f}s: {text!r}", flush=True)
+        text = textproc.clean(raw, self.cfg)
+        print(f"transcribed ({source}) in {self.last_used - started:.1f}s: {raw!r}" + (f" -> {text!r}" if text != raw.strip() else ""), flush=True)
         self.fb.done()
-        if text:
+        if not text:
+            return
+        app = self.focus()
+        if self.cfg.post_hook.strip():
+            text = textproc.run_hook(self.cfg.post_hook, text, {"HOLD_DICTATE_APP": app, "HOLD_DICTATE_PROVIDER": source})
+            if not text:
+                print("hold-dictate: the text hook asked not to paste this", flush=True)
+                return
+        self.last_text, self.last_app = text, app
+        self.deliver(text, app)
+
+    def deliver(self, text: str, app: str, submit_allowed: bool = True):
+        rule = paste.rule_for(self.cfg.app_rules, app)
+        if rule == "off":
+            return
+        if rule == "clipboard":
+            note = self.copier(text)
+        else:
+            shift = {"shift": True, "paste": False}.get(rule)  # None: terminals get Ctrl+Shift+V
+            submit = submit_allowed and (rule == "submit" or (self.cfg.auto_submit and rule != "paste"))
             with self.paste_lock:
-                note = self.paster(text)
-            if note:
-                self.fb.notify(note)
+                note = self.paster(text, app=app, shift=shift, submit=submit)
+        if note:
+            self.fb.notify(note)
+
+    def paste_last(self) -> str:
+        """Pastes the last dictation again into the focused app (never presses Enter)."""
+        if not self.last_text:
+            return "nothing dictated yet"
+        app = self.focus()
+        shift = {"shift": True, "paste": False}.get(paste.rule_for(self.cfg.app_rules, app))
+        with self.paste_lock:
+            return self.paster(self.last_text, app=app, shift=shift, submit=False)
+
+    def copy_last(self) -> str:
+        if not self.last_text:
+            return "nothing dictated yet"
+        return self.copier(self.last_text)
 
     def idle(self) -> bool:
-        self.threads = [t for t in self.threads if t.is_alive()]
-        return self.recorder is None and not self.threads
+        with self.lock:  # a silence stop finishes on another thread; never see it between stop and worker
+            self.threads = [t for t in self.threads if t.is_alive()]
+            return self.recorder is None and not self.threads
 
     def tick(self):
         """Frees the local model after a long idle stretch."""
@@ -130,10 +217,10 @@ def run(cfg: Config) -> int:
     def on_saved(new_cfg: Config):
         new_hotkey = parse_hotkey(new_cfg.hotkey)
         server.hotkey_problem = ""  # a saved shortcut is always a valid one
-        if str(new_hotkey) != str(detector.hotkey) and detector.set_hotkey(new_hotkey):
-            dictation.on_action("stop")
+        if str(new_hotkey) != str(detector.hotkey) and (detector.set_hotkey(new_hotkey) or dictation.latched):
+            dictation.finish()
 
-    server = SettingsServer(cfg, on_saved=on_saved, updater=updater).start()
+    server = SettingsServer(cfg, on_saved=on_saved, updater=updater, session=dictation).start()
     server.problem, server.hotkey_problem = problem, hotkey_problem
     dictation.on_no_key = server.open
 
@@ -155,12 +242,13 @@ def run(cfg: Config) -> int:
     signal.signal(signal.SIGTERM, lambda *_: done.set())  # a clean exit, so other apps get their volume back
     threading.Thread(target=listen, daemon=True).start()
     if backend:
-        print(f"hold-dictate: hold {hotkey} to dictate ({cfg.provider}, keyboard via {backend.name})", flush=True)
+        print(f"hold-dictate: {'hold' if cfg.hotkey_mode == 'hold' else 'tap'} {hotkey} to dictate ({cfg.provider}, keyboard via {backend.name})", flush=True)
     print(f"hold-dictate: settings at {server.url}", flush=True)
     try:
         if tray.available():
             try:
-                icon = tray.Tray(on_settings=server.open, on_check_updates=lambda: (updater.check(), server.open()), on_quit=done.set)
+                icon = tray.Tray(on_settings=server.open, on_check_updates=lambda: (updater.check(), server.open()),
+                                 on_copy_last=lambda: feedback.notify(dictation.copy_last() or "Copied the last dictation"), on_quit=done.set)
                 threading.Thread(target=lambda: (done.wait(), icon.stop()), daemon=True).start()
                 icon.run()
             except Exception as e:  # no tray is no reason to stop dictating
