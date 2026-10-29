@@ -5,7 +5,9 @@ import urllib.request
 import uuid
 
 from .audio import SAMPLE_RATE, wav_bytes
-from .config import Config
+from .config import HEBREW_PROMPT, LANGUAGE_NAMES, LANGUAGES, Config
+
+SAMPLES = {code: sentence for code, _, sentence in LANGUAGES if sentence}
 
 
 class TranscribeError(RuntimeError):
@@ -39,17 +41,55 @@ def _explain_http_error(cfg: Config, e: urllib.error.HTTPError) -> str:
     return f"{cfg.preset()['label']} returned {e.code}: {hints.get(e.code, detail)} ({detail})"
 
 
+def language_hints(cfg: Config) -> tuple[str, str]:
+    """(language to force or '', prompt) for the languages you picked.
+
+    One language is forced, except Hebrew in the cloud: forcing it makes Whisper write English words in
+    Hebrew letters. Several languages stay on auto-detect, and the prompt holds a sentence in each of them,
+    which steers the model toward them instead of a similar-sounding language."""
+    codes = cfg.language_codes()
+    force = codes[0] if len(codes) == 1 and not (codes[0] == "he" and cfg.provider != "local") else ""
+    parts, covered = [], set()
+    if "he" in codes and (codes == ["he"] or "en" in codes):
+        parts, covered = [HEBREW_PROMPT], {"he", "en"}  # Hebrew with English words in Latin letters
+    if not force:
+        parts += [SAMPLES[c] for c in codes if c in SAMPLES and c not in covered]
+    if cfg.prompt:
+        parts.append(cfg.prompt)
+    return force, " ".join(parts)
+
+
+def detected_code(name: str) -> str:
+    """'hebrew', 'Hebrew' or 'he' -> 'he'; '' when unknown."""
+    name = (name or "").strip().lower()
+    if name in LANGUAGE_NAMES:
+        return name
+    return next((code for code, full in LANGUAGE_NAMES.items() if full.lower() == name), "")
+
+
 def transcribe_api(cfg: Config, audio) -> str:
+    """Several languages: Whisper models report what they heard, and a language outside your list is
+    transcribed again in your first language (Hebrew misheard as Arabic or Yiddish, for example)."""
+    force, prompt = language_hints(cfg)
+    codes = cfg.language_codes()
+    verify = len(codes) > 1 and cfg.provider in ("groq", "openai") and "whisper" in cfg.effective_model()
+    text, heard = _request(cfg, audio, force, prompt, "verbose_json" if verify else "json")
+    if verify and detected_code(heard) not in ("", *codes):
+        text, _ = _request(cfg, audio, codes[0], prompt, "json")
+    return text
+
+
+def _request(cfg: Config, audio, language: str, prompt: str, response_format: str) -> tuple[str, str]:
     key, base = cfg.effective_key(), cfg.effective_base_url()
     if not key:
         raise TranscribeError("no API key set. Add one in the settings (`hold-dictate settings`).")
     if not base:
         raise TranscribeError("base_url is not set for the custom provider.")
-    fields = {"model": cfg.effective_model(), "response_format": "json", "temperature": "0"}
-    if cfg.language:
-        fields["language"] = cfg.language
-    if cfg.prompt:
-        fields["prompt"] = cfg.prompt
+    fields = {"model": cfg.effective_model(), "response_format": response_format, "temperature": "0"}
+    if language:
+        fields["language"] = language
+    if prompt:
+        fields["prompt"] = prompt
     body, content_type = multipart(fields, "speech.wav", wav_bytes(audio), "audio/wav")
     request = urllib.request.Request(
         f"{base}/audio/transcriptions",
@@ -58,7 +98,8 @@ def transcribe_api(cfg: Config, audio) -> str:
     )
     try:
         with urllib.request.urlopen(request, timeout=cfg.timeout) as response:
-            return json.load(response)["text"].strip()
+            data = json.load(response)
+            return data["text"].strip(), str(data.get("language") or "")
     except urllib.error.HTTPError as e:
         raise TranscribeError(_explain_http_error(cfg, e)) from e
     except (urllib.error.URLError, TimeoutError, OSError) as e:
@@ -122,8 +163,13 @@ class LocalTranscriber:
         self.model = None
 
     def transcribe(self, audio) -> str:
-        segments, _ = self.load().transcribe(
-            audio, language=self.cfg.language or None, beam_size=5, vad_filter=False,
-            initial_prompt=self.cfg.prompt or None,
+        model, (force, prompt), codes = self.load(), language_hints(self.cfg), self.cfg.language_codes()
+        run = lambda language: model.transcribe(
+            audio, language=language or None, beam_size=5, vad_filter=False, initial_prompt=prompt or None,
         )
+        segments, info = run(force)
+        if not force and codes and info.language not in codes:
+            # Detection happens up front and the segments are lazy, so switching costs only the detection.
+            probs = dict(getattr(info, "all_language_probs", None) or [])
+            segments, _ = run(max(codes, key=lambda c: probs.get(c, 0.0)))
         return " ".join(s.text.strip() for s in segments).strip()

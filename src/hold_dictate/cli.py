@@ -6,7 +6,7 @@ import sys
 import urllib.request
 
 from . import __version__, config as cfgmod, service
-from .config import HEBREW_PROMPT, PROVIDERS, Config
+from .config import PROVIDERS, Config
 
 REPO = "https://github.com/Can-0f-Tuna/hold-dictate"
 
@@ -57,19 +57,19 @@ def cmd_setup(args) -> int:
                 print("  2. Sign in (or create a free account)")
                 print("  3. Click 'Create API Key' and copy it")
             key = getpass.getpass("\nPaste the key here (nothing is shown as you type): ").strip()
-        cfg.api_key = key
+        cfg.api_key, cfg.api_key_service = key, choice
         from .providers import check_api
         problem = check_api(cfg)
         print("Key works." if not problem else f"Could not verify the key: {problem}")
         if problem and not args.yes and not yes("Save it anyway?", False):
             return 1
 
-    language = args.language if args.language is not None else ask("Main language code (en, he, es, ...) or Enter to auto-detect", cfg.language)
-    cfg.language, cfg.prompt = language, ""
-    if language == "he":
-        cfg.prompt = HEBREW_PROMPT  # keeps English words in Latin letters
-        if choice != "local":
-            cfg.language = ""  # forcing Hebrew makes Whisper mangle the English words
+    languages = args.languages if args.languages is not None else ask("Languages you speak, as codes (for example he,en), or Enter for any", cfg.languages)
+    try:
+        cfg.languages = cfgmod.clean_languages(languages)
+    except ValueError as e:
+        print(f"Invalid language: {e}")
+        return 1
     cfg.hotkey = args.hotkey or ask("Hold-to-talk hotkey", cfg.hotkey)
     from .hotkey import parse_hotkey
     try:
@@ -223,7 +223,7 @@ def main(argv=None) -> int:
     s.add_argument("--api-key")
     s.add_argument("--base-url")
     s.add_argument("--model")
-    s.add_argument("--language")
+    s.add_argument("--languages", "--language", dest="languages", help="comma-separated codes, for example he,en")
     s.add_argument("--hotkey")
     s.add_argument("-y", "--yes", action="store_true", help="no questions; start at login")
     s.add_argument("--no-service", action="store_true", help="do not install start-at-login")

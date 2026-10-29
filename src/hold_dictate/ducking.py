@@ -1,8 +1,14 @@
 """Turns other apps' sound down while you dictate, so music from the speakers does not reach the microphone.
 
-The sound fades down when the hotkey is pressed and back up when it is released.
-Linux lowers each playing stream (PipeWire or PulseAudio, through pactl), Windows each app's session
-(pycaw), macOS the output volume."""
+The sound fades down when the hotkey is pressed and back up when it is released. Only each app's own
+volume changes, never the system volume, so no volume popup shows on the screen. Linux lowers each playing
+stream (PipeWire or PulseAudio, through pactl), Windows each app's session (pycaw), macOS the Music and
+Spotify apps (macOS has no per-app volume for other apps).
+
+On Linux and Windows, sound going to headphones, a headset or Bluetooth is left alone: the microphone
+cannot hear it, and a Bluetooth headset switches to its call mode when the microphone opens, so changing
+volumes there only causes trouble. macOS has no quick way to ask which output is in use, and lowering
+Spotify or Music inside the app is harmless with any output, so it always does that."""
 import atexit
 import json
 import os
@@ -28,12 +34,32 @@ def gain_at(progress: float, start_db: float, end_db: float) -> float:
 # Each backend: snapshot() -> saved state, apply(saved, gain) sets every app to gain x its own volume
 # (gain is an amplitude: 1.0 = as it was, 0.2 = -14 dB, 0.0 = silent).
 
+PRIVATE_FORMS = {"headphone", "headphones", "headset", "hands-free", "handset"}
+
+
+def _pactl_json(*what):
+    out = subprocess.run(["pactl", "-f", "json", "list", *what], capture_output=True, text=True, timeout=3, check=True)
+    return json.loads(out.stdout or "[]")
+
+
+def private_sink(sink: dict) -> bool:
+    """True for an output the microphone cannot hear: headphones, a headset, anything Bluetooth."""
+    props = sink.get("properties", {})
+    if props.get("device.bus") == "bluetooth" or props.get("device.form_factor") in PRIVATE_FORMS:
+        return True
+    active = sink.get("active_port")
+    port = next((p for p in sink.get("ports", []) if p.get("name") == active), {})
+    return str(port.get("type", "")).lower() in PRIVATE_FORMS or "headphone" in str(active).lower()
+
+
 def _pulse_snapshot():
-    out = subprocess.run(["pactl", "-f", "json", "list", "sink-inputs"], capture_output=True, text=True, timeout=3, check=True)
+    private = {s.get("index") for s in _pactl_json("sinks") if private_sink(s)}
     saved = []
-    for stream in json.loads(out.stdout or "[]"):
+    for stream in _pactl_json("sink-inputs"):
         if stream.get("properties", {}).get("application.process.id") == str(os.getpid()):
             continue  # our own beeps
+        if stream.get("sink") in private:
+            continue
         values = [ch["value"] for ch in stream.get("volume", {}).values()]
         if values:
             saved.append((str(stream["index"]), values))
@@ -47,11 +73,37 @@ def _pulse_apply(saved, gain):
         subprocess.run(["pactl", "set-sink-input-volume", index, *[str(round(v * scale)) for v in values]], capture_output=True, timeout=3)
 
 
+HEADPHONE_FORMS = {3, 5, 6}  # EndpointFormFactor: Headphones, Headset, Handset
+FORM_FACTOR_KEY = "{1da5d803-d492-4edd-8c23-e0c0ffee7f0e} 0"  # PKEY_AudioEndpoint_FormFactor
+PRIVATE_WORDS = ("headphone", "headset", "hands-free", "airpods", "buds", "bluetooth")
+
+
+def _windows_output_is_private() -> bool:
+    """True when the default output is headphones or a headset. Unknown counts as speakers."""
+    from pycaw.pycaw import AudioUtilities
+
+    try:
+        device = AudioUtilities.GetSpeakers()
+        if not hasattr(device, "properties"):
+            device = AudioUtilities.CreateDevice(device)
+        props = {str(k).lower(): v for k, v in (device.properties or {}).items()}
+        name = str(getattr(device, "FriendlyName", "") or "").lower()
+    except Exception:
+        return False
+    try:
+        form = int(props.get(FORM_FACTOR_KEY))
+    except (TypeError, ValueError):
+        form = None
+    return form in HEADPHONE_FORMS or any(word in name for word in PRIVATE_WORDS)
+
+
 def _windows_snapshot():
     import comtypes
     from pycaw.pycaw import AudioUtilities
 
     comtypes.CoInitialize()  # once per thread; the worker thread is always the same one
+    if _windows_output_is_private():
+        return None
     saved = []
     for session in AudioUtilities.GetAllSessions():
         if session.Process is None or session.ProcessId == os.getpid():
@@ -73,16 +125,30 @@ def _osascript(script):
     return subprocess.run(["osascript", "-e", script], capture_output=True, text=True, timeout=3, check=True).stdout.strip()
 
 
+# Apps whose own volume AppleScript can set. The system volume would show the volume popup.
+MAC_PLAYERS = ("Spotify", "Music")
+
+
 def _mac_snapshot():
-    muted = _osascript("output muted of (get volume settings)")
-    before = _osascript("output volume of (get volume settings)")
-    if muted == "true" or not before.isdigit():  # muted already, or a device without volume control
-        return None
-    return int(before)
+    saved = []
+    for app in MAC_PLAYERS:
+        # "is running" checks without launching the app; "tell" alone would start it.
+        script = f'if application "{app}" is running then tell application "{app}" to get sound volume'
+        try:
+            volume = _osascript(script)
+        except subprocess.CalledProcessError:
+            continue
+        if volume.isdigit() and int(volume) > 0:
+            saved.append((app, int(volume)))
+    return saved
 
 
-def _mac_apply(before, gain):
-    _osascript(f"set volume output volume {round(before * gain)}")
+def _mac_apply(saved, gain):
+    for app, before in saved:
+        try:
+            _osascript(f'if application "{app}" is running then tell application "{app}" to set sound volume to {round(before * gain)}')
+        except subprocess.CalledProcessError:
+            pass  # the app has quit
 
 
 def backend():

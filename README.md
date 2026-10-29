@@ -29,8 +29,8 @@ Manual install: `uv tool install git+https://github.com/Can-0f-Tuna/hold-dictate
 A local page at `http://127.0.0.1:47811` that only this computer can open. Open it from the tray icon next to the clock (Windows), the menu-bar icon (macOS), **hold-dictate settings** in the app menu (Linux), or `hold-dictate settings`. It sets:
 
 - speech service and API key (with a check that the key works)
-- the model: Automatic uses the one we recommend for that service; **Advanced** lets you pick another
-- language and the hold-to-talk hotkey (press the keys to record it)
+- the model: Automatic uses the one we recommend for that service; **Choose another** lets you pick one
+- the languages you speak (pick as many as you like, for example Hebrew and English) and the hold-to-talk hotkey (press the keys to record it)
 - what happens to music and videos while you dictate: turned down (the default), silenced, or left alone
 - sounds, and the recording pill: style (Dots, the default, or the original Lines), colour, position and size
 - automatic updates
@@ -72,7 +72,7 @@ If the cloud request fails and the `local` extra is installed, it falls back to 
 | `hold-dictate update` | Installs the latest release now |
 | `hold-dictate config` | Prints the config file path |
 
-Settings live in a TOML file: `~/.config/hold-dictate/config.toml` (Linux), `~/Library/Application Support/hold-dictate/config.toml` (macOS), `%APPDATA%\hold-dictate\config.toml` (Windows). Options: `provider`, `api_key`, `base_url`, `model`, `language`, `prompt`, `hotkey`, `local_model`, `local_fallback`, `sounds`, `background_audio` (`lower`, `mute` or `off`), `min_hold`, `timeout`, `auto_update`, `overlay_bg`, `overlay_bars`, `overlay_position`, `overlay_size`.
+Settings live in a TOML file: `~/.config/hold-dictate/config.toml` (Linux), `~/Library/Application Support/hold-dictate/config.toml` (macOS), `%APPDATA%\hold-dictate\config.toml` (Windows). Options: `provider`, `api_key`, `base_url`, `model`, `languages` (comma-separated codes such as `"he,en"`; empty means any language), `prompt`, `hotkey`, `local_model`, `local_fallback`, `sounds`, `background_audio` (`lower`, `mute` or `off`), `min_hold`, `timeout`, `auto_update`, `overlay_bg`, `overlay_bars`, `overlay_position`, `overlay_size`.
 
 Hotkey format: modifiers (`alt`, `ctrl`, `shift`, `super`) plus one key (`space`, a-z, 0-9, f1-f12), for example `ctrl+alt+d`.
 

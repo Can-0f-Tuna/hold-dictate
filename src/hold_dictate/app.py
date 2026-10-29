@@ -110,12 +110,14 @@ def run(cfg: Config) -> int:
     backend, problem = choose_backend()
     if backend is None:  # keep running so the settings page still works; the hotkey waits for a restart
         print(f"hold-dictate: {problem}", file=sys.stderr, flush=True)
+    hotkey_problem = ""
     try:
         hotkey = parse_hotkey(cfg.hotkey)
     except ValueError as e:  # fall back to the default so the settings page can fix it
-        problem = problem or f"the hotkey {cfg.hotkey!r} in the config is invalid ({e}); using alt+space"
-        print(f"hold-dictate: {problem}", file=sys.stderr, flush=True)
-        hotkey = parse_hotkey(Config().hotkey)
+        hotkey_problem = f"The shortcut {cfg.hotkey!r} in the settings file doesn't work ({e}), so Alt + Space is used for now."
+        print(f"hold-dictate: {hotkey_problem}", file=sys.stderr, flush=True)
+        cfg.hotkey = Config().hotkey  # otherwise every save on the settings page would fail on it
+        hotkey = parse_hotkey(cfg.hotkey)
 
     feedback = Feedback(cfg)
     detector = HoldDetector(hotkey)
@@ -127,11 +129,12 @@ def run(cfg: Config) -> int:
 
     def on_saved(new_cfg: Config):
         new_hotkey = parse_hotkey(new_cfg.hotkey)
+        server.hotkey_problem = ""  # a saved shortcut is always a valid one
         if str(new_hotkey) != str(detector.hotkey) and detector.set_hotkey(new_hotkey):
             dictation.on_action("stop")
 
     server = SettingsServer(cfg, on_saved=on_saved, updater=updater).start()
-    server.problem = problem
+    server.problem, server.hotkey_problem = problem, hotkey_problem
     dictation.on_no_key = server.open
 
     def tick():
