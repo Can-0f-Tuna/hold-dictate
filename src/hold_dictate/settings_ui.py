@@ -8,6 +8,7 @@ import json
 import secrets
 import sys
 import threading
+import time
 import urllib.request
 import webbrowser
 from dataclasses import asdict, fields
@@ -170,8 +171,16 @@ class SettingsServer:
         return {"ok": not problem, "message": problem}
 
     def start_service(self) -> dict:
+        """Installs and starts the app, then hands back the address of its own settings page."""
         from . import service
-        return {"message": service.install()}
+        message = service.install()
+        url = ""
+        for _ in range(20):  # the app takes a moment to start its server
+            url = running_url(timeout=0.5)
+            if url:
+                break
+            time.sleep(0.25)
+        return {"message": message, "url": url}
 
     def update(self, action: str) -> dict:
         if not self.updater:

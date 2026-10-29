@@ -12,7 +12,7 @@
 :root {
   color-scheme: light;
   --paper:#fcfcfb; --surface:#fff; --soft:#f2f2ef; --ink:#0c0c0d; --ink-2:#38383b; --muted:#6a6a6f;
-  --line:#e7e7e3; --line-2:#d6d6d1; --track:#cfcfca; --accent:#2a46ff; --on-accent:#fff; --ok:#1f8a4c; --err:#c4202b;
+  --line:#e7e7e3; --line-2:#d6d6d1; --edge:#8d8d87; --track:#8d8d87; --accent:#2a46ff; --on-accent:#fff; --ok:#17703d; --err:#c4202b;
   --key:#fff; --key-edge:#d6d6d1; --key-shade:#c2c2bc; --key-glow:rgba(0,0,0,.35); --key-hi:rgba(255,255,255,0);
   --sans:"Geist",ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
   --mono:"Geist Mono",ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
@@ -24,8 +24,8 @@
   :root {
     color-scheme: dark;
     --paper:#0a0a0b; --surface:#19191c; --soft:#1f1f22; --ink:#ededeb; --ink-2:#c9c9c5; --muted:#9b9ba0;
-    --line:#27272b; --line-2:#3a3a3f; --track:#47474d; --accent:#6b80ff; --on-accent:#0a0a0b; --ok:#7fe0a0; --err:#ff6b6b;
-    --key:#2a2a2f; --key-edge:#4a4a51; --key-shade:#050506; --key-glow:#000; --key-hi:rgba(255,255,255,.08);
+    --line:#27272b; --line-2:#3a3a3f; --edge:#68686f; --track:#68686f; --accent:#6b80ff; --on-accent:#0a0a0b; --ok:#7fe0a0; --err:#ff6b6b;
+    --key:#2a2a2f; --key-edge:#5a5a62; --key-shade:#050506; --key-glow:#000; --key-hi:rgba(255,255,255,.16);
   }
 }
 * { box-sizing:border-box; }
@@ -59,7 +59,6 @@ code { font:500 .9em var(--mono); background:var(--soft); border:1px solid var(-
 .hero { padding:var(--s-8) 0 0; }
 /* the voice, drawn in the recording pill's halftone dots: it moves when dictation is ready, and lies flat when it isn't */
 .wave { display:block; width:100%; height:84px; margin-top:var(--s-7); pointer-events:none; -webkit-mask-image:linear-gradient(90deg, transparent, #000 12%, #000 88%, transparent); mask-image:linear-gradient(90deg, transparent, #000 12%, #000 88%, transparent); }
-.hero + .group { border-top:1px solid var(--line); }
 .status { display:inline-flex; align-items:center; gap:var(--s-2); font-size:var(--t-sm); color:var(--muted); margin-bottom:var(--s-5); }
 .status i { margin-inline-start:4px; flex:none; width:8px; height:8px; border-radius:50%; background:var(--ok); box-shadow:0 0 0 4px color-mix(in srgb, var(--ok) 16%, transparent); }
 .status.warn i { background:var(--err); box-shadow:0 0 0 4px color-mix(in srgb, var(--err) 16%, transparent); }
@@ -71,7 +70,7 @@ code { font:500 .9em var(--mono); background:var(--soft); border:1px solid var(-
   background:var(--key); border:1px solid var(--key-edge); border-bottom-width:5px; border-bottom-color:var(--key-shade); color:var(--ink);
   box-shadow:inset 0 1px 0 var(--key-hi), 0 18px 30px -18px var(--key-glow); transition:transform .08s, border-bottom-width .08s, box-shadow .08s; }
 .cap.down { transform:translateY(3px); border-bottom-width:2px; box-shadow:inset 0 1px 0 var(--key-hi), 0 8px 16px -12px var(--key-glow); }
-.plus { color:var(--muted); font-weight:300; font-size:.6em; }
+.plus { color:var(--muted); font-weight:400; font-size:.6em; }
 .keys.rec .cap { border-color:var(--accent); border-bottom-color:var(--accent); }
 .keys.rec .ghost { color:var(--muted); font-weight:400; font-size:.6em; }
 .setup h1 { margin:0; font-size:clamp(30px, 4.6vw, 48px); font-weight:600; letter-spacing:-.02em; line-height:1.1; }
@@ -99,12 +98,12 @@ code { font:500 .9em var(--mono); background:var(--soft); border:1px solid var(-
 /* controls */
 input[type=text], input[type=password], input[type=number], select {
   font:inherit; font-size:var(--t-base); width:100%; height:40px; padding:0 var(--s-3); border-radius:var(--r-md);
-  border:1px solid var(--line-2); background:var(--surface); color:var(--ink); }
+  border:1px solid var(--edge); background:var(--surface); color:var(--ink); }
 select { appearance:none; padding-inline-end:36px; cursor:pointer;
   background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath d='M3 4.5 6 7.5 9 4.5' fill='none' stroke='%23888' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
   background-repeat:no-repeat; background-position:right 12px center; }
 select option { background:var(--surface); color:var(--ink); }
-input:hover, select:hover { border-color:var(--muted); }
+input:hover, select:hover { border-color:var(--ink-2); }
 input:focus-visible, select:focus-visible { outline:none; border-color:var(--accent); box-shadow:0 0 0 3px color-mix(in srgb, var(--accent) 22%, transparent); }
 input.mono { font-family:var(--mono); font-size:var(--t-sm); }
 input[type=number] { width:110px; }
@@ -112,8 +111,8 @@ input[type=number] { width:110px; }
 .field input { flex:1; min-width:0; }
 
 .btn { font:inherit; font-size:var(--t-sm); font-weight:500; height:40px; padding:0 var(--s-4); border-radius:var(--r-md); cursor:pointer; white-space:nowrap;
-  border:1px solid var(--line-2); background:var(--surface); color:var(--ink); }
-.btn:hover { border-color:var(--muted); }
+  border:1px solid var(--edge); background:var(--surface); color:var(--ink); }
+.btn:hover { border-color:var(--ink-2); }
 .btn.primary { background:var(--ink); color:var(--paper); border-color:var(--ink); }
 .btn.primary:hover { opacity:.88; }
 .btn.small { height:32px; padding:0 var(--s-3); }
@@ -439,10 +438,10 @@ function renderService(s) {
   const local = c.provider === 'local', p = s.providers[c.provider];
   $('keyRows').hidden = local;
   $('customRows').hidden = c.provider !== 'custom';
-  $('localHelp').hidden = !local;
+  $('localHelp').hidden = !local || !s.local_installed; // when it is missing, the hero shows the install command
   $('localHelp').innerHTML = '';
   $('localHelp').append(s.local_installed ? 'Runs on this computer without internet. The first use downloads the model.' : 'The offline model needs one more install. In a terminal, run ', ...(s.local_installed ? [] : [Object.assign(document.createElement('code'), { textContent: 'uv tool install --force "hold-dictate[local]"' })]));
-  $('saveKey').classList.toggle('primary', !s.key_hint && !s.key_from_env);
+  $('saveKey').classList.toggle('primary', (blocker(s) || {}).move === 'keyRows');
   $('key').placeholder = s.key_hint ? `Saved key ${s.key_hint}` : s.key_from_env ? 'A key is set in an environment variable.' : 'Paste your key here';
   const help = $('keyHelp'); help.textContent = '';
   if (p && p.keys_url) {
@@ -598,7 +597,12 @@ $('installUpd').onclick = async () => {
 };
 $('startSvc').onclick = async () => {
   $('startSvc').disabled = true;
-  try { const r = await api('/api/service', {}); $('svcMsg').className = 'note'; $('svcMsg').textContent = r.message; } catch (e) { $('svcMsg').className = 'note bad'; $('svcMsg').textContent = e.message; }
+  $('svcMsg').className = 'note wait'; $('svcMsg').textContent = 'Starting…';
+  try {
+    const r = await api('/api/service', {});
+    if (r.url) { location.href = r.url; return; } // this page belongs to the stand-alone settings; the app has its own
+    $('svcMsg').className = 'note'; $('svcMsg').textContent = r.message;
+  } catch (e) { $('svcMsg').className = 'note bad'; $('svcMsg').textContent = e.message; }
   finally { $('startSvc').disabled = false; }
 };
 
@@ -683,14 +687,14 @@ function drawWave(now) {
   if (wave.width !== Math.round(w * r)) { wave.width = Math.round(w * r); wave.height = Math.round(h * r); }
   wctx.setTransform(r, 0, 0, r, 0, 0); wctx.clearRect(0, 0, w, h);
   const css = getComputedStyle(document.documentElement), cell = 7, cols = Math.floor(w / cell), rows = Math.floor(h / cell), mid = rows / 2;
-  const tt = now / 1000, live = $('status').classList.contains('warn') ? 0 : 1;
+  const blocked = $('status').classList.contains('warn'), tt = blocked ? 2.2 : now / 1000, live = blocked ? 0.45 : 1;
   for (let i = 0; i < cols; i++) {
     const x = i / cols, env = Math.sin(Math.PI * x) * (0.55 + 0.45 * Math.sin(tt * 1.3 + i * 0.35) * Math.sin(tt * 0.7 + i * 0.11));
-    const amp = Math.max(0.6 / mid, env * live) * mid * 0.92;
+    const amp = Math.max(0.6 / mid, env * live) * mid * 0.92, accent = !blocked;
     for (let j = 0; j < rows; j++) {
       const d = Math.abs(j + 0.5 - mid);
       if (d > amp) continue;
-      const core = d < amp * 0.45;
+      const core = accent && d < amp * 0.45;
       wctx.fillStyle = core ? css.getPropertyValue('--accent') : css.getPropertyValue('--line-2');
       const sz = core ? 3 : 2.4;
       wctx.fillRect(i * cell + (cell - sz) / 2, j * cell + (cell - sz) / 2, sz, sz);
