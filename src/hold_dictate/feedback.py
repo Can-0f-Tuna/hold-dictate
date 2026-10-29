@@ -9,6 +9,7 @@ from pathlib import Path
 import numpy as np
 
 from .audio import SAMPLE_RATE
+from .config import pill_available
 
 QML = Path(__file__).with_name("overlay.qml")
 RUNTIME = os.environ.get("XDG_RUNTIME_DIR") or "/tmp"
@@ -44,7 +45,7 @@ class Feedback:
         self.pending_update = lambda: ""  # version waiting to be installed; the pill shows a "!" tab
         self.proc = None
         self.events = None
-        if sys.platform.startswith("linux") and os.environ.get("WAYLAND_DISPLAY") and shutil.which("quickshell"):
+        if pill_available():
             self.events = open(EVENTS_FILE, "w", buffering=1)
             updated = os.environ.pop("HOLD_DICTATE_UPDATED", "")
             if not updated:
@@ -73,8 +74,7 @@ class Feedback:
             self.events.write(line + "\n")
 
     def _beep(self, name):
-        # The overlay already signals state on Linux with quickshell; other systems get a beep.
-        if (self.cfg and not self.cfg.sounds) or self.events:
+        if not (self.cfg and self.cfg.beeps):
             return
         def play():
             try:

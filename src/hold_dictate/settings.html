@@ -39,13 +39,14 @@ code { font:500 .9em var(--mono); background:var(--soft); border:1px solid var(-
 
 .wrap { max-width:880px; margin:0 auto; padding:0 var(--s-6); }
 
-/* header */
-.bar { position:sticky; top:0; z-index:5; background:var(--paper); }
-.top { display:flex; align-items:center; justify-content:space-between; gap:var(--s-4); height:64px; border-bottom:1px solid var(--line); }
-.brand { display:flex; align-items:center; gap:10px; font-weight:600; letter-spacing:-.01em; }
-.brand svg { width:22px; height:22px; display:block; }
-.brand .sub { color:var(--muted); font-weight:400; }
-.save { display:flex; align-items:center; gap:var(--s-2); font-size:var(--t-sm); color:var(--muted); white-space:nowrap; }
+/* the save indicator: top right. Its idle text scrolls away with the page; "Saved" and errors stay in view for a moment */
+.bar { position:relative; top:0; z-index:5; height:0; display:flex; justify-content:flex-end; }
+.bar.float { position:sticky; }
+.save { display:flex; align-items:center; gap:var(--s-2); height:32px; margin:var(--s-4) calc(-1 * var(--s-3)) 0 0; padding:0 var(--s-3); border-radius:var(--r-pill);
+  background:color-mix(in srgb, var(--paper) 88%, transparent); -webkit-backdrop-filter:blur(8px); backdrop-filter:blur(8px);
+  font-size:var(--t-sm); color:var(--muted); white-space:nowrap; border:1px solid transparent; transition:background .2s, border-color .2s, box-shadow .2s; }
+.bar.float .save { margin-right:0; }
+.bar.float .save { background:color-mix(in srgb, var(--surface) 92%, transparent); border-color:var(--line); box-shadow:0 6px 20px -12px rgba(0,0,0,.35); } /* over the settings once you scroll */
 .save svg { width:15px; height:15px; flex:none; }
 .save.saving { color:var(--ink-2); }
 .save.saved { color:var(--ink); }
@@ -53,27 +54,30 @@ code { font:500 .9em var(--mono); background:var(--soft); border:1px solid var(-
 .save.offline { color:var(--err); }
 
 /* banner for problems that block everything */
+.bar + .banner { margin-top:64px; }
 .banner { display:flex; align-items:center; justify-content:space-between; gap:var(--s-4); margin-top:var(--s-3); margin-bottom:var(--s-3); padding:var(--s-3) var(--s-4); border:1px solid var(--line-2); border-radius:var(--r-md); background:var(--surface); font-size:var(--t-sm); }
 .banner.err { border-color:color-mix(in srgb, var(--err) 45%, var(--line)); }
 
 /* the hotkey: the first thing on the page */
-.hero { padding:var(--s-8) 0 0; }
+.hero { padding:96px 0 0; } /* room for the save indicator above the shortcut */
 /* the voice, drawn in the recording pill's halftone dots: it moves when dictation is ready, and lies flat when it isn't */
 .wave { display:block; width:100%; height:84px; margin-top:var(--s-7); pointer-events:none; -webkit-mask-image:linear-gradient(90deg, transparent, #000 12%, #000 88%, transparent); mask-image:linear-gradient(90deg, transparent, #000 12%, #000 88%, transparent); }
 .status { display:inline-flex; align-items:center; gap:var(--s-2); font-size:var(--t-sm); color:var(--muted); margin-bottom:var(--s-5); }
 .status i { margin-inline-start:4px; flex:none; width:8px; height:8px; border-radius:50%; background:var(--ok); box-shadow:0 0 0 4px color-mix(in srgb, var(--ok) 16%, transparent); }
+.status:not(.warn) { display:none; } /* when it works, the shortcut says so */
 .status.warn i { background:var(--err); box-shadow:0 0 0 4px color-mix(in srgb, var(--err) 16%, transparent); }
 .status.warn { color:var(--ink); font-weight:500; }
 .status .link { font-weight:400; }
 .keys { display:flex; flex-wrap:wrap; align-items:center; gap:var(--s-3) var(--s-4); font-size:clamp(34px, 6vw, 68px); font-weight:600; letter-spacing:-.02em; line-height:1.15; }
 .keys .word { color:var(--ink); }
-.cap { display:inline-grid; place-items:center; min-width:1.8em; height:1.55em; padding:0 .5em; border-radius:var(--r-lg); font:600 .58em var(--sans); letter-spacing:-.01em;
-  background:var(--key); border:1px solid var(--key-edge); border-bottom-width:5px; border-bottom-color:var(--key-shade); color:var(--ink);
-  box-shadow:inset 0 1px 0 var(--key-hi), 0 18px 30px -18px var(--key-glow); transition:transform .08s, border-bottom-width .08s, box-shadow .08s; }
-.cap.down { transform:translateY(3px); border-bottom-width:2px; box-shadow:inset 0 1px 0 var(--key-hi), 0 8px 16px -12px var(--key-glow); }
+/* the key's side is a shadow under an even face, so the label sits in the middle of the face and nothing is cut off */
+.cap { display:inline-grid; place-items:center; min-width:1.8em; height:1.6em; margin-bottom:5px; padding:0 .5em; border-radius:var(--r-lg); font:600 .58em/1 var(--sans); letter-spacing:-.01em;
+  background:var(--key); border:1px solid var(--key-edge); color:var(--ink);
+  box-shadow:inset 0 1px 0 var(--key-hi), 0 5px 0 -1px var(--key-shade), 0 5px 0 0 var(--key-edge), 0 22px 30px -18px var(--key-glow); transition:transform .08s, box-shadow .08s; }
+.cap.down { transform:translateY(4px); box-shadow:inset 0 1px 0 var(--key-hi), 0 1px 0 -1px var(--key-shade), 0 1px 0 0 var(--key-edge), 0 10px 16px -12px var(--key-glow); }
 .plus { color:var(--muted); font-weight:400; font-size:.6em; }
 .pair { display:inline-flex; align-items:center; gap:var(--s-4); white-space:nowrap; }
-.keys.rec .cap { border-color:var(--accent); border-bottom-color:var(--accent); }
+.keys.rec .cap { border-color:var(--accent); }
 .keys.rec .ghost { color:var(--muted); font-weight:400; font-size:.6em; }
 .setup h1 { margin:0; font-size:clamp(30px, 4.6vw, 48px); font-weight:600; letter-spacing:-.02em; line-height:1.1; }
 .setup .slot { margin-top:var(--s-6); max-width:560px; }
@@ -172,15 +176,19 @@ details[open] > summary svg { transform:rotate(90deg); }
 details .items { margin-top:var(--s-6); }
 
 .acts-end { display:flex; gap:var(--s-2); }
+.upd { display:grid; gap:var(--s-2); flex:1; min-width:0; }
+.upd .note { display:flex; align-items:center; gap:var(--s-2); font-variant-numeric:tabular-nums; }
+.upd .note svg { width:15px; height:15px; flex:none; }
+.prog { display:block; height:4px; max-width:320px; border-radius:var(--r-pill); background:var(--line); overflow:hidden; }
+.prog i { display:block; height:100%; width:0; border-radius:inherit; background:var(--accent); transition:width .25s ease-out; }
 .gap-top { margin-top:var(--s-3); }
 .foot { padding:var(--s-6) 0 var(--s-8); font-size:var(--t-sm); color:var(--muted); display:flex; flex-wrap:wrap; gap:var(--s-2) var(--s-5); justify-content:space-between; }
 
 @media (max-width:720px) {
   .wrap { padding:0 var(--s-4); }
   .group { grid-template-columns:1fr; gap:var(--s-5); padding:var(--s-6) 0; }
-  .hero { padding:var(--s-7) 0 var(--s-6); }
+  .hero { padding:80px 0 0; }
   .row { align-items:flex-start; }
-  .brand .sub { display:none; }
   .wave { height:64px; margin-top:var(--s-6); }
   .cap { border-radius:var(--r-md); }
 }
@@ -191,16 +199,9 @@ details .items { margin-top:var(--s-6); }
 <div class="wrap">
 
 <div class="bar">
-<header class="top">
-  <div class="brand">
-    <svg viewBox="0 0 32 32" aria-hidden="true"><rect x="1" y="1" width="30" height="30" rx="8" fill="#000"/><rect x="3.5" y="2.5" width="25" height="23" rx="6" fill="#232326"/><g fill="#fff"><rect x="8" y="12" width="2.6" height="4" rx="1.3"/><rect x="12.4" y="9" width="2.6" height="10" rx="1.3"/><rect x="16.8" y="6.5" width="2.6" height="15" rx="1.3" fill="#5b74ff"/><rect x="21.2" y="10.5" width="2.6" height="7" rx="1.3"/></g></svg>
-    hold-dictate <span class="sub">Settings</span>
-  </div>
   <div class="save" id="save" role="status" aria-live="polite"></div>
-</header>
-
-<div class="banner err" id="stale" hidden><span>This page belongs to an earlier run of hold-dictate and can't save any more. Open the settings again <span id="reopenWhere">from the hold-dictate icon</span>, or run <code>hold-dictate settings</code>.</span></div>
 </div>
+<div class="banner err" id="stale" hidden><span>This page belongs to an earlier run of hold-dictate and can't save any more. Open the settings again <span id="reopenWhere">from the hold-dictate icon</span>, or run <code>hold-dictate settings</code>.</span></div>
 
 <section class="hero" aria-label="Status">
   <div class="status" id="status"><i></i><span id="statusText"></span></div>
@@ -270,7 +271,7 @@ details .items { margin-top:var(--s-6); }
       <div><div class="seg" id="background_audio" role="group" aria-labelledby="l-bg"><button data-v="lower">Turn down</button><button data-v="mute">Silence</button><button data-v="off">Leave as is</button></div></div>
       <p class="hint" id="bgHint"></p>
     </div>
-    <label class="row"><span class="text"><b>Sounds</b><span class="hint">A short sound when recording starts and stops.</span></span><input type="checkbox" class="switch" id="sounds"></label>
+    <label class="row"><span class="text"><b>Sounds</b><span class="hint">A short sound when recording starts and stops.</span></span><input type="checkbox" class="switch" id="beeps"></label>
   </div>
 </section>
 
@@ -299,7 +300,7 @@ details .items { margin-top:var(--s-6); }
   <header><h2 id="h-upd">Updates</h2><p id="verLine"></p></header>
   <div class="items">
     <label class="row"><span class="text"><b>Install updates automatically</b><span class="hint">New versions install while you're not dictating.</span></span><input type="checkbox" class="switch" id="auto_update"></label>
-    <div class="row"><span class="note" id="updMsg"></span><span class="acts-end"><button class="btn small primary" id="installUpd" hidden>Update now</button><button class="btn small" id="checkUpd">Check now</button></span></div>
+    <div class="row"><span class="upd"><span class="note" id="updMsg"></span><span class="prog" id="updBar" hidden><i></i></span></span><span class="acts-end"><button class="btn small primary" id="installUpd" hidden>Update now</button><button class="btn small" id="checkUpd">Check now</button></span></div>
   </div>
 </section>
 
@@ -335,7 +336,7 @@ class Stale extends Error {}
 async function api(path, body) {
   let res;
   try { res = await fetch(path, { method: body === undefined ? 'GET' : 'POST', headers: { 'X-Token': TOKEN, 'Content-Type': 'application/json' }, body: body === undefined ? undefined : JSON.stringify(body) }); }
-  catch { reachable = false; saveState('offline'); if (S) render(S); retry(); throw new Error("can't reach hold-dictate. Is it running?"); }
+  catch { if (upd) throw new Error('restarting'); reachable = false; saveState('offline'); if (S) render(S); retry(); throw new Error("can't reach hold-dictate. Is it running?"); }
   if (!reachable) { reachable = true; saveState('idle'); }
   if (res.status === 403) { $('stale').hidden = false; saveState('failed', "Can't save"); throw new Stale('open the settings again'); }
   const data = await res.json().catch(() => ({ error: res.statusText }));
@@ -354,7 +355,9 @@ function saveState(kind, text) {
   el.lastChild.textContent = label;
   clearTimeout(saveTimer);
   if (kind === 'saved') saveTimer = setTimeout(() => saveState('idle'), 2200);
+  floatSave();
 }
+function floatSave() { document.querySelector('.bar').classList.toggle('float', scrollY > 24 && !$('save').classList.contains('idle')); }
 async function save(changes) {
   saveState('saving');
   try { S = await api('/api/config', changes); render(S); saveState('saved'); return true; }
@@ -405,8 +408,9 @@ function blocker(s) {
 
 function status(s) {
   const b = blocker(s);
+  if (still) requestAnimationFrame(drawWave);
   $('status').classList.toggle('warn', !!b);
-  $('statusText').textContent = b ? 'Dictation is off' : 'Ready';
+  $('statusText').textContent = b ? 'Dictation is off' : '';
   // When dictation can't work, the hero becomes the fix, and the shortcut waits until it is true.
   $('readyView').hidden = !!b; $('setupView').hidden = !b; $('startSvc').hidden = true;
   for (const [id, home] of Object.entries(homes)) if ($(id).parentNode !== home.parent && (!b || b.move !== id)) home.parent.insertBefore($(id), home.next);
@@ -435,7 +439,7 @@ function render(s) {
     : c.background_audio === 'off' ? 'Other apps keep playing as usual.'
     : s.platform === 'darwin' ? `Spotify and Music get ${c.background_audio === 'mute' ? 'silent' : 'quieter'} while you hold the keys, and come back when you let go. macOS can't change other apps' volume.`
     : `Other apps get ${c.background_audio === 'mute' ? 'silent' : 'quieter'} while you hold the keys, and come back when you let go. Headphones and Bluetooth stay as they are: the microphone can't hear them.`;
-  $('sounds').checked = c.sounds;
+  $('beeps').checked = c.beeps;
   $('lookGroup').hidden = !s.overlay;
   $('overlay_bg').value = c.overlay_bg; $('overlay_bars').value = c.overlay_bars;
   for (const id of ['overlay_style', 'overlay_position']) document.querySelectorAll(`#${id} button`).forEach(b => b.setAttribute('aria-pressed', String(b.dataset.v === c[id])));
@@ -556,7 +560,7 @@ for (const id of ['base_url', 'model', 'prompt']) {
   $(id).addEventListener('change', () => { clearTimeout(debounced[id]); save({ [id]: $(id).value }); });
 }
 for (const id of ['min_hold', 'timeout']) $(id).addEventListener('change', () => save({ [id]: parseFloat($(id).value) }));
-for (const id of ['sounds', 'auto_update', 'local_fallback']) $(id).addEventListener('change', () => save({ [id]: $(id).checked }));
+for (const id of ['beeps', 'auto_update', 'local_fallback']) $(id).addEventListener('change', () => save({ [id]: $(id).checked }));
 for (const id of ['background_audio', 'overlay_style', 'overlay_position']) document.querySelectorAll(`#${id} button`).forEach(b => b.onclick = () => save({ [id]: b.dataset.v }));
 
 // ---- shortcut recorder ----
@@ -603,21 +607,63 @@ window.addEventListener('keydown', e => {
 // ---- updates ----
 function renderUpdates(s) {
   const u = s.update, msg = $('updMsg');
+  if (upd) return; // followUpd draws it
+  $('checkUpd').hidden = false; $('updBar').hidden = true;
   $('verLine').textContent = `You have version ${s.version}.`;
   $('auto_update').checked = s.config.auto_update;
   $('installUpd').hidden = !u.available || !!u.can_update;
-  msg.className = 'note';
-  msg.textContent = u.can_update ? `Updating from here isn't possible: ${u.can_update}.`
-    : u.available ? `Version ${u.latest} is available.` + (u.status && !u.status.endsWith('available') ? ' ' + u.status : '')
-    : u.latest ? 'You have the latest version.' : (u.status || 'Not checked yet.');
+  const failed = /^update failed: /.test(u.status || '');
+  msg.className = failed || updNote ? 'note bad' : 'note';
+  msg.textContent = updNote || (failed ? `Couldn't install ${u.latest.replace(/^v/, '')}: ${u.status.replace(/^update failed: (error: )?/, '')}. Try again with Update now.`
+    : u.can_update ? `Updating from here isn't possible: ${u.can_update}.`
+    : u.available ? `Version ${u.latest.replace(/^v/, "")} is available.` + (u.status && !u.status.endsWith('available') ? ' ' + u.status : '')
+    : u.latest ? 'You have the latest version.' : (u.status || 'Not checked yet.'));
 }
 $('checkUpd').onclick = async () => {
-  $('checkUpd').disabled = true; $('updMsg').className = 'note wait'; $('updMsg').textContent = 'Checking…';
+  updNote = ''; $('checkUpd').disabled = true; $('updMsg').className = 'note wait'; $('updMsg').textContent = 'Checking…';
   try { S = await api('/api/update/check', {}); render(S); } catch (e) { $('updMsg').className = 'note bad'; $('updMsg').textContent = e.message; }
   finally { $('checkUpd').disabled = false; }
 };
+// Installing: the percentage while uv works, "Restarting…" while the new version starts, then a tick.
+let updNote = ''; // what went wrong with the last update, kept until the next try
+let upd = null; // { want: '0.5.2', from: '0.5.1', shown: 0, gone: 0 } while an update this page started is under way
+function showUpd(text, pct, done) {
+  const msg = $('updMsg');
+  msg.className = 'note ' + (done ? 'ok' : 'wait');
+  msg.innerHTML = (done ? ICON_OK : '') + '<span></span>'; msg.lastChild.textContent = text;
+  $('updBar').hidden = pct == null; if (pct != null) $('updBar').firstChild.style.width = pct + '%';
+  $('installUpd').hidden = true; $('checkUpd').hidden = !done;
+}
+async function followUpd() {
+  let s;
+  try { s = await api('/api/state'); upd.gone = 0; }
+  catch { // it is restarting; after a minute, say it didn't come back
+    if (!upd) return;
+    upd.gone = upd.gone || Date.now(); upd.restarted = true;
+    if (Date.now() - upd.gone < 60000) { showUpd('Restarting hold-dictate…', 100); setTimeout(followUpd, 500); return; }
+    upd = null; updNote = `hold-dictate didn't come back after the update. Start it again ${where(S)}.`;
+    reachable = false; saveState('offline'); render(S); retry();
+    return;
+  }
+  S = s;
+  if (s.version !== upd.from) { upd = null; render(s); showUpd(`Updated to version ${s.version}.`, null, true); return; }
+  const u = s.update;
+  // failed, or it found nothing to install (progress never started): show what the server says
+  if (u.progress == null && !u.ready && (/failed|cannot/.test(u.status) || Date.now() - upd.started > 4000)) { upd = null; render(s); return; }
+  if (u.progress != null) upd.started = Infinity;
+  if (upd.restarted && !u.ready) { // it came back, but as the old version
+    upd = null; updNote = `The update didn't take: you still have version ${s.version}. Try again with Update now.`; render(s); return;
+  }
+  // uv reports stages, so between them the number creeps on towards the next one instead of sitting still
+  const goal = u.ready ? 100 : (u.progress || 0);
+  const aim = u.ready ? 100 : Math.min(Math.max(goal, upd.shown + 0.8), goal + 12, 99);
+  upd.shown = Math.max(upd.shown, upd.shown + (aim - upd.shown) * 0.45); // never backwards
+  showUpd(u.ready ? 'Restarting hold-dictate…' : `Downloading version ${upd.want}… ${Math.round(upd.shown)}%`, upd.shown);
+  setTimeout(followUpd, 200);
+}
 $('installUpd').onclick = async () => {
-  try { S = await api('/api/update/install', {}); render(S); $('updMsg').className = 'note wait'; $('updMsg').textContent = 'Installing in the background. hold-dictate restarts when it is done.'; }
+  updNote = ''; const want = (S.update.latest || '').replace(/^v/, '');
+  try { S = await api('/api/update/install', {}); upd = { want, from: S.version, shown: 0, gone: 0, started: Date.now() }; showUpd(`Downloading version ${want}… 0%`, 0); followUpd(); }
   catch (e) { $('updMsg').className = 'note bad'; $('updMsg').textContent = e.message; }
 };
 $('startSvc').onclick = async () => {
@@ -705,24 +751,52 @@ for (const [v, name] of [['#6b80ff', 'Blue'], ['#ffffff', 'White'], ['#4cc38a', 
 $('resetLook').onclick = () => save({ overlay_bg: '#0a0a0b', overlay_bars: '#6b80ff', overlay_position: 'bottom', overlay_size: 1, overlay_style: 'dots' });
 
 // ---- the hero's halftone waveform, the same dots as the recording pill ----
-const wave = $('wave'), wctx = wave.getContext('2d');
+// It scrolls like a recording of someone talking: syllables of different length and strength,
+// short gaps between words, longer pauses between sentences.
+const wave = $('wave'), wctx = wave.getContext('2d'), WCELL = 6, STEP = 70; // px per dot, ms per column
+const rand = (lo, hi) => lo + Math.random() * (hi - lo);
+const voice = { left: 0, len: 1, peak: 0, gap: 0, words: 0, syllables: 0 };
+function nextLevel() {
+  const v = voice;
+  if (v.gap > 0) { v.gap -= STEP; return rand(0, 0.05); }
+  if (v.left <= 0) {
+    if (v.syllables <= 0) {
+      if (v.words <= 0) { v.words = Math.round(rand(3, 8)); v.gap = rand(500, 1200); return 0; } // end of a sentence
+      v.words--; v.syllables = Math.round(rand(1, 4));
+      if (Math.random() < 0.7) { v.gap = rand(110, 260); return 0; } // between words
+    }
+    v.syllables--;
+    v.len = v.left = rand(150, 330);
+    v.peak = rand(0.3, 1) * (v.syllables === 0 && Math.random() < 0.4 ? 0.6 : 1);
+  }
+  v.left -= STEP;
+  const t = 1 - Math.max(v.left, 0) / v.len; // 0..1 through the syllable: quick rise, slower fall
+  // syllables in a word run into each other; only words and sentences have silence between them
+  return v.peak * (0.3 + 0.7 * Math.pow(Math.sin(Math.PI * Math.min(1, t * 1.1)), 0.7)) * rand(0.8, 1);
+}
+let levels = [], lastStep = 0, smooth = 1;
 function drawWave(now) {
   const r = devicePixelRatio || 1, w = wave.clientWidth, h = wave.clientHeight;
   if (!w) return;
   if (wave.width !== Math.round(w * r)) { wave.width = Math.round(w * r); wave.height = Math.round(h * r); }
+  const cols = Math.floor(w / WCELL), rows = Math.floor(h / WCELL), mid = rows / 2;
+  while (levels.length < cols) levels.unshift(nextLevel()); // a page that opens mid-sentence
+  if (levels.length > cols) levels = levels.slice(-cols);
+  const blocked = $('status').classList.contains('warn');
+  if (!blocked && now - lastStep > STEP * 8) lastStep = now;
+  while (!blocked && now - lastStep >= STEP) { lastStep += STEP; levels.shift(); levels.push(0.35 * levels[levels.length - 1] + 0.65 * nextLevel()); } // a voice does not jump from column to column
+  smooth = still ? +!blocked : smooth + (+!blocked - smooth) * 0.08; // eases flat when dictation stops working, and back
   wctx.setTransform(r, 0, 0, r, 0, 0); wctx.clearRect(0, 0, w, h);
-  const css = getComputedStyle(document.documentElement), cell = 7, cols = Math.floor(w / cell), rows = Math.floor(h / cell), mid = rows / 2;
-  const blocked = $('status').classList.contains('warn'), tt = blocked ? 2.2 : now / 1000, live = blocked ? 0.7 : 1;
+  const css = getComputedStyle(document.documentElement), ink = css.getPropertyValue('--accent'), dim = css.getPropertyValue(blocked ? '--edge' : '--line-2');
   for (let i = 0; i < cols; i++) {
-    const x = i / cols, env = Math.sin(Math.PI * x) * (0.55 + 0.45 * Math.sin(tt * 1.3 + i * 0.35) * Math.sin(tt * 0.7 + i * 0.11));
-    const amp = Math.max(0.6 / mid, env * live) * mid * 0.92, accent = !blocked;
+    const amp = Math.max(0.6, Math.min(1, levels[i] * 1.3) * smooth * mid * 0.95);
     for (let j = 0; j < rows; j++) {
       const d = Math.abs(j + 0.5 - mid);
       if (d > amp) continue;
-      const core = accent && d < amp * 0.45;
-      wctx.fillStyle = core ? css.getPropertyValue('--accent') : css.getPropertyValue(blocked ? '--edge' : '--line-2');
+      const core = !blocked && d < amp * 0.5 && amp > 1;
+      wctx.fillStyle = core ? ink : dim;
       const sz = core ? 3 : 2.4;
-      wctx.fillRect(i * cell + (cell - sz) / 2, j * cell + (cell - sz) / 2, sz, sz);
+      wctx.fillRect(i * WCELL + (WCELL - sz) / 2, j * WCELL + (WCELL - sz) / 2, sz, sz);
     }
   }
 }
@@ -731,6 +805,7 @@ const still = matchMedia('(prefers-reduced-motion: reduce)').matches;
 addEventListener('resize', () => drawWave(performance.now()));
 
 // ---- start ----
+addEventListener('scroll', floatSave, { passive: true });
 saveState('idle');
 const refresh = () => api('/api/state').then(s => { S = s; render(s); if ($('save').classList.contains('failed')) saveState('idle'); }).catch(() => {}); // the hero and the stale banner already say what went wrong
 if (S) render(S); else refresh();

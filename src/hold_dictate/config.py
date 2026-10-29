@@ -1,7 +1,8 @@
 """Settings: one TOML file in the per-user config directory, plus environment overrides for API keys."""
 import os
 import sys
-from dataclasses import asdict, dataclass, fields
+import shutil
+from dataclasses import asdict, dataclass, field, fields
 from pathlib import Path
 
 if sys.version_info >= (3, 11):
@@ -149,7 +150,7 @@ class Config:
     hotkey: str = "alt+space"
     local_model: str = "small"  # faster-whisper model name or Hugging Face repo; "small" is Automatic
     local_fallback: bool = True  # use the local model when the cloud request fails (if installed)
-    sounds: bool = True  # short beeps on start, stop and error
+    beeps: bool = field(default_factory=lambda: not pill_available())  # short sounds on start, stop and error; off where the pill shows it
     background_audio: str = "lower"  # lower | mute | off: other apps' sound while you dictate
     min_hold: float = 0.3  # taps shorter than this (seconds) are ignored
     timeout: float = 15.0  # seconds before a cloud request is given up
@@ -181,6 +182,11 @@ class Config:
         return [c for c in (part.strip().lower() for part in self.languages.split(",")) if c]
 
 
+def pill_available() -> bool:
+    """True where the recording pill runs (Linux on Wayland, with quickshell). It shows what beeps would."""
+    return sys.platform.startswith("linux") and bool(os.environ.get("WAYLAND_DISPLAY")) and bool(shutil.which("quickshell"))
+
+
 def load(path: Path | None = None) -> Config:
     path = path or config_path()
     cfg = Config()
@@ -192,6 +198,9 @@ def load(path: Path | None = None) -> Config:
                 setattr(cfg, key, value)
         if "languages" not in data:
             migrate_language(cfg, data)
+        if "sounds" in data and "beeps" not in data:
+            # Before 0.5.2 `sounds` never played while the recording pill was showing, so it starts off there.
+            cfg.beeps = bool(data["sounds"]) and not pill_available()
         if cfg.api_key and "api_key_service" not in data:
             cfg.api_key_service = cfg.provider  # before 0.5 the key always belonged to the saved provider
     return cfg
