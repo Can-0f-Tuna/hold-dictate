@@ -103,9 +103,10 @@ code { font:500 .9em var(--mono); background:var(--soft); border:1px solid var(-
 .note.ok { color:var(--ok); } .note.bad { color:var(--err); } .note.wait { color:var(--muted); }
 
 /* controls */
-input[type=text], input[type=password], input[type=number], select {
+input[type=text], input[type=password], input[type=number], select, textarea {
   font:inherit; font-size:var(--t-base); width:100%; height:40px; padding:0 var(--s-3); border-radius:var(--r-md);
   border:1px solid var(--edge); background:var(--surface); color:var(--ink); }
+textarea { height:auto; padding:var(--s-2) var(--s-3); line-height:1.5; resize:vertical; }
 select { appearance:none; padding-inline-end:36px; cursor:pointer;
   background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath d='M3 4.5 6 7.5 9 4.5' fill='none' stroke='%23888' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
   background-repeat:no-repeat; background-position:right 12px center; }
@@ -149,7 +150,14 @@ input[type=number] { width:110px; }
 .pair { display:flex; gap:var(--s-2); align-items:center; }
 .pair > input, .pair > select { flex:1; min-width:0; }
 .pair > .to { color:var(--muted); flex:none; }
-.btn.icon { width:40px; padding:0; display:inline-grid; place-items:center; flex:none; }
+.btn.icon { width:32px; padding:0; display:inline-grid; place-items:center; flex:none; border-color:transparent; background:none; color:var(--muted); }
+.btn.icon:hover { color:var(--ink); border-color:var(--line-2); }
+.pair input.dup { border-color:var(--err); }
+.pairs + .note { margin-top:calc(-1 * var(--s-1)); }
+code.cmd-inline { white-space:nowrap; }
+#rulesBox { display:grid; gap:var(--s-2); }
+#appRows .pair > input { flex:.7; } /* the rule needs the room more than the app name */
+#rulesBox[inert] { opacity:.5; }
 .btn.icon svg { width:12px; height:12px; }
 .last { padding:var(--s-3) var(--s-4); border:1px solid var(--line-2); border-radius:var(--r-md); background:var(--surface); white-space:pre-wrap; overflow-wrap:anywhere; max-height:160px; overflow:auto; unicode-bidi:plaintext; }
 .last.empty { color:var(--muted); }
@@ -298,7 +306,7 @@ details .items { margin-top:var(--s-6); }
   <div class="items">
     <label class="row"><span class="text"><b>Drop phrases made up from noise</b><span class="hint">From silence or noise, the transcriber sometimes writes things like “Thanks for watching”.</span></span><input type="checkbox" class="switch" id="drop_hallucinations"></label>
     <label class="row"><span class="text"><b>Remove filler words</b><span class="hint">um, uh, <bdi>אה</bdi>, <bdi>אממ</bdi></span></span><input type="checkbox" class="switch" id="remove_fillers"></label>
-    <div class="item" id="fillerRow"><label class="label" for="filler_words">Filler words</label><input type="text" id="filler_words" dir="auto"><p class="hint">Separate them with commas. Leave it empty for the built-in list.</p></div>
+    <div class="item" id="fillerRow"><label class="label" for="filler_words">Filler words</label><textarea id="filler_words" dir="auto" rows="2" spellcheck="false"></textarea><p class="hint">Separate them with commas. <button class="link" id="resetFillers">Back to the built-in list</button></p></div>
     <div class="item">
       <label class="row"><span class="text"><b>Say punctuation out loud</b><span class="hint">Say the mark and it's typed:</span></span><input type="checkbox" class="switch" id="spoken_punctuation"></label>
       <div class="hint ex">
@@ -313,7 +321,8 @@ details .items { margin-top:var(--s-6); }
       <span class="label" id="l-words">Word replacements</span>
       <p class="hint">For words the transcriber keeps getting wrong. Leave the second box empty to delete the word. Hebrew words also match with a prefix such as <bdi>ב</bdi>, <bdi>ל</bdi> or <bdi>ו</bdi>.</p>
       <div class="pairs" id="wordRows" role="group" aria-labelledby="l-words"></div>
-      <div><button class="btn small" id="addWord">Add a word</button></div>
+      <p class="note bad" id="wordDup" hidden></p>
+      <div><button class="link" id="addWord">+ Add a word</button></div>
     </div>
   </div>
 </section>
@@ -325,15 +334,18 @@ details .items { margin-top:var(--s-6); }
       <span class="label">Last dictation</span>
       <div class="last" id="lastText"></div>
       <div class="acts-start"><button class="btn small" id="copyLast">Copy</button><span class="note" id="lastMsg"></span></div>
-      <p class="hint">To paste it again anywhere, give <code>hold-dictate paste-last</code> a keyboard shortcut in your system settings.</p>
+      <p class="hint">To paste it again anywhere, give <code class="cmd-inline">hold-dictate paste-last</code> a keyboard shortcut in your system settings.</p>
     </div>
-    <label class="row"><span class="text"><b>Press Enter after pasting</b><span class="hint">In chat apps this sends the message at once. A rule below can turn it on or off for one app.</span></span><input type="checkbox" class="switch" id="auto_submit"></label>
+    <label class="row"><span class="text"><b>Press Enter after pasting</b><span class="hint" id="submitHint">In chat apps this sends the message at once. A rule below can turn it on or off for one app.</span></span><input type="checkbox" class="switch" id="auto_submit"></label>
     <div class="item">
       <span class="label" id="l-rules">Rules per app</span>
+      <p class="note bad" id="noFocus">This system can't tell which app is in front (GNOME or KDE on Wayland), so rules per app don't work here.</p>
       <p class="hint">A rule applies when its name is part of the app's name, in any case.</p>
+      <div id="rulesBox">
       <div class="pairs" id="appRows" role="group" aria-labelledby="l-rules"></div>
-      <div class="acts-start"><button class="btn small" id="addApp">Add a rule</button><button class="btn small" id="addLastApp" hidden></button></div>
-      <p class="note bad" id="noFocus">This system can't tell which app is in front (GNOME or KDE on Wayland), so these rules don't apply here.</p>
+      <p class="note bad" id="appDup" hidden></p>
+      <div class="acts-start"><button class="link" id="addApp">+ Add a rule</button><button class="link" id="addLastApp" hidden></button></div>
+      </div>
     </div>
   </div>
 </section>
@@ -374,7 +386,7 @@ details .items { margin-top:var(--s-6); }
       <div class="items">
         <div class="item"><label class="label" for="prompt">Spelling hint</label><input type="text" id="prompt"><p class="hint">Words and names the transcriber should spell your way, for example Kubernetes or your colleagues' names.</p></div>
         <label class="row"><span class="text"><b>Use the offline model if the service fails</b><span class="hint">Only when the offline model is installed.</span></span><input type="checkbox" class="switch" id="local_fallback"></label>
-        <div class="row"><label class="text" for="min_hold"><b>Ignore taps shorter than</b><span class="hint">Seconds. Stops a quick press from recording.</span></label><input type="number" id="min_hold" min="0" max="2" step="0.05"></div>
+        <div class="row"><label class="text" for="min_hold"><b>Ignore taps shorter than</b><span class="hint">Seconds. A shorter press doesn't record.</span></label><input type="number" id="min_hold" min="0" max="2" step="0.05"></div>
         <div class="row"><label class="text" for="timeout"><b>Give up on the service after</b><span class="hint">Seconds without an answer.</span></label><input type="number" id="timeout" min="3" max="120" step="1"></div>
         <div class="item"><label class="label" for="post_hook">Text hook</label><input type="text" id="post_hook" class="mono" spellcheck="false" placeholder="a shell command"><p class="hint">A command that gets the text on its input; what it prints is typed instead. No output keeps the text, and exit code 77 types nothing. It has 5 seconds, and HOLD_DICTATE_APP and HOLD_DICTATE_PROVIDER tell it the app and the service.</p></div>
       </div>
@@ -514,7 +526,8 @@ function render(s) {
   $('overlay_size').value = c.overlay_size;
   renderUpdates(s);
   $('local_fallback').checked = c.local_fallback;
-  for (const id of ['prompt', 'base_url', 'model', 'filler_words', 'post_hook']) if (document.activeElement !== $(id)) $(id).value = c[id]; // don't move the cursor while typing
+  for (const id of ['prompt', 'base_url', 'model', 'post_hook']) if (document.activeElement !== $(id)) $(id).value = c[id];
+  if (document.activeElement !== $('filler_words')) $('filler_words').value = c.filler_words || s.fillers_default.join(', '); // the built-in list, to edit // don't move the cursor while typing
   for (const id of ['min_hold', 'timeout', 'silence_stop']) $(id).value = c[id];
   renderMode(s); renderText(s); renderPasting(s); // these save on change, so show what was kept (out-of-range values are clamped)
   $('cfgPath').textContent = s.config_path;
@@ -623,7 +636,7 @@ function renderLanguages(s) {
 $('moreLang').addEventListener('change', async () => { const v = $('moreLang').value; if (v) { await save({ languages: [...S.config.languages, v] }); $('moreLang').focus(); } });
 
 // ---- simple fields ----
-for (const id of ['base_url', 'model', 'prompt', 'filler_words', 'post_hook']) {
+for (const id of ['base_url', 'model', 'prompt', 'post_hook']) {
   $(id).addEventListener('input', () => saveSoon(id, () => $(id).value));
   $(id).addEventListener('change', () => { clearTimeout(debounced[id]); save({ [id]: $(id).value }); });
 }
@@ -686,7 +699,6 @@ function renderText(s) {
   const c = s.config;
   for (const id of ['drop_hallucinations', 'remove_fillers', 'spoken_punctuation', 'auto_submit']) $(id).checked = c[id];
   $('fillerRow').hidden = !c.remove_fillers;
-  $('filler_words').placeholder = s.fillers_default.join(', ');
   $('spokenWarn').hidden = !c.spoken_punctuation;
   renderPairs('word_overrides', c.word_overrides);
 }
@@ -701,6 +713,8 @@ function renderPasting(s) {
   $('addLastApp').hidden = !app || has || !s.focus_detect;
   $('addLastApp').textContent = `Add a rule for ${app}`;
   $('noFocus').hidden = s.focus_detect;
+  $('rulesBox').inert = !s.focus_detect;
+  $('submitHint').textContent = 'In chat apps this sends the message at once.' + (s.focus_detect ? ' A rule below can turn it on or off for one app.' : '');
 }
 const RULES = { paste: 'Paste, no Enter', submit: 'Paste and press Enter', shift: 'Paste with Ctrl+Shift+V', clipboard: 'Copy only', off: 'Do nothing' };
 const EDITORS = {
@@ -729,16 +743,31 @@ function pairsOf(field) {
   }
   return out;
 }
-function savePairs(field) { const v = pairsOf(field); if (JSON.stringify(v) !== JSON.stringify(S.config[field])) save({ [field]: v }); }
+// The same word or app twice can't both be saved: say so, and save nothing until it is fixed
+function duplicates(field) {
+  const seen = new Set(), dups = [];
+  for (const row of $(EDITORS[field].box).children) {
+    const k = row.querySelector('input'), name = field === 'app_rules' ? k.value.trim().toLowerCase() : k.value.trim();
+    const dup = !!name && seen.has(name); seen.add(name);
+    k.classList.toggle('dup', dup); if (dup) dups.push(k.value.trim());
+  }
+  const note = $(field === 'app_rules' ? 'appDup' : 'wordDup');
+  note.hidden = !dups.length; note.textContent = dups.length ? `“${dups[0]}” is in the list twice. Change or remove one to save.` : '';
+  return dups.length;
+}
+function savePairs(field) { if (duplicates(field)) return; const v = pairsOf(field); if (JSON.stringify(v) !== JSON.stringify(S.config[field])) save({ [field]: v }); }
 function renderPairs(field, values) {
   const box = $(EDITORS[field].box);
   if (box.contains(document.activeElement)) return; // never rebuild under the cursor
-  if (JSON.stringify(pairsOf(field)) === JSON.stringify(values)) return; // keeps rows still being filled in
+  if (box.querySelector('.dup') || JSON.stringify(pairsOf(field)) === JSON.stringify(values)) return; // keeps rows still being filled in
   box.textContent = '';
   for (const [k, v] of Object.entries(values)) box.append(pairRow(field, k, v));
 }
 function addPair(field, k, v) { const row = pairRow(field, k, v); $(EDITORS[field].box).append(row); row.querySelector(k ? 'select, input:not(:first-child)' : 'input').focus(); return row; }
-for (const field of Object.keys(EDITORS)) $(EDITORS[field].box).addEventListener('change', () => savePairs(field));
+for (const field of Object.keys(EDITORS)) { $(EDITORS[field].box).addEventListener('change', () => savePairs(field)); $(EDITORS[field].box).addEventListener('input', () => duplicates(field)); }
+const words = v => v.split(',').map(w => w.trim()).filter(Boolean).join(', ');
+$('filler_words').addEventListener('input', () => saveSoon('filler_words', () => { const v = words($('filler_words').value); return v === S.fillers_default.join(', ') ? '' : v; }));
+$('resetFillers').onclick = () => { $('filler_words').value = S.fillers_default.join(', '); save({ filler_words: '' }); };
 $('addWord').onclick = () => addPair('word_overrides', '', '');
 $('addApp').onclick = () => addPair('app_rules', '', 'paste');
 $('addLastApp').onclick = () => { addPair('app_rules', S.last.app.trim().toLowerCase(), 'paste'); savePairs('app_rules'); };
