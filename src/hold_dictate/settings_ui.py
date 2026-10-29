@@ -15,7 +15,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
 from . import __version__, config as cfgmod
-from .config import HEBREW_PROMPT, PROVIDERS, Config
+from .config import HEBREW_PROMPT, LOCAL_MODELS, OVERLAY_STYLES, PROVIDERS, Config
 
 PAGE = Path(__file__).with_name("settings.html")
 PORT = 47811
@@ -112,7 +112,8 @@ class SettingsServer:
             "config": values,
             "key_hint": f"…{key[-4:]}" if len(key) >= 8 else ("set" if key else ""),
             "key_from_env": bool(cfg.effective_key()) and not key,
-            "providers": {k: {"label": v["label"], "keys_url": v["keys_url"], "model": v["model"]} for k, v in PROVIDERS.items()},
+            "providers": {k: {"label": v["label"], "keys_url": v["keys_url"], "model": v["model"], "models": v["models"]} for k, v in PROVIDERS.items()},
+            "local_models": LOCAL_MODELS,
             "local_installed": importlib.util.find_spec("faster_whisper") is not None,
             "overlay": sys.platform.startswith("linux"),
             "update": {
@@ -143,6 +144,10 @@ class SettingsServer:
         parse_hotkey(new.hotkey)
         if new.overlay_position not in ("bottom", "top"):
             raise ValueError("position must be bottom or top")
+        if new.overlay_style not in OVERLAY_STYLES:
+            raise ValueError("style must be " + " or ".join(OVERLAY_STYLES))
+        if not new.local_model:
+            new.local_model = LOCAL_MODELS[0][0]
         new.overlay_size = min(1.5, max(0.75, new.overlay_size))
         for name in ("overlay_bg", "overlay_bars"):
             value = getattr(new, name)

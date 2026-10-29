@@ -20,6 +20,8 @@ irm https://hold-dictate.vercel.app/install.ps1 | iex
 
 The script installs [uv](https://docs.astral.sh/uv/), the system helpers it needs and the latest release of hold-dictate, starts it (and at every login), then opens the settings page in your browser. Add your API key there. Running the script again reinstalls the latest release.
 
+With an AI coding agent (Claude Code, Codex, Cursor, ...): paste the prompt from [site/agent.md](site/agent.md), also at <https://hold-dictate.vercel.app/agent.md>. The agent installs it, walks you through the key, runs the checks and opens a GitHub issue for anything it can't fix.
+
 Manual install: `uv tool install git+https://github.com/Can-0f-Tuna/hold-dictate`, then `hold-dictate service install` and `hold-dictate settings`.
 
 ## Settings
@@ -27,8 +29,9 @@ Manual install: `uv tool install git+https://github.com/Can-0f-Tuna/hold-dictate
 A local page at `http://127.0.0.1:47811` that only this computer can open. Open it from the tray icon next to the clock (Windows), the menu-bar icon (macOS), **hold-dictate settings** in the app menu (Linux), or `hold-dictate settings`. It sets:
 
 - speech service and API key (with a check that the key works)
+- the model: Automatic uses the one we recommend for that service; **Advanced** lets you pick another
 - language and the hold-to-talk hotkey (press the keys to record it)
-- sounds, and the colours, position and size of the recording pill
+- sounds, and the recording pill: style (Dots, the default, or the original Lines), colour, position and size
 - automatic updates
 
 Changes apply immediately; no restart needed. Prefer the terminal? `hold-dictate setup` still works.

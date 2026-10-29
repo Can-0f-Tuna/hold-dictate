@@ -128,13 +128,17 @@ def cmd_doctor(_args) -> int:
 def cmd_file(args) -> int:
     from . import audio
     from .app import transcribe
-    from .providers import LocalTranscriber
+    from .providers import LocalTranscriber, TranscribeError
     cfg = cfgmod.load()
-    speech = audio.speech_only(audio.read_audio_file(args.path))
-    if speech is None:
-        print("(no speech found)")
-        return 0
-    print(transcribe(cfg, LocalTranscriber(cfg), speech)[0])
+    try:
+        speech = audio.speech_only(audio.read_audio_file(args.path))
+        if speech is None:
+            print("(no speech found)")
+            return 0
+        print(transcribe(cfg, LocalTranscriber(cfg), speech)[0])
+    except (TranscribeError, ValueError, OSError, EOFError, audio.wave.Error) as e:
+        print(f"hold-dictate: {e}", file=sys.stderr)
+        return 1
     return 0
 
 

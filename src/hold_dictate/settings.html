@@ -52,6 +52,9 @@ button:disabled { opacity:.5; cursor:default; }
 .stage { border:1px solid var(--line); border-radius:10px; background:var(--card); height:150px; position:relative; overflow:hidden; }
 .pill { position:absolute; left:50%; display:grid; place-items:center; width:224px; height:56px; border-radius:28px; border:1px solid #2a2a2e; transform:translateX(-50%) scale(var(--s,1)); transition:top .2s, bottom .2s; }
 .pill canvas { display:block; width:192px; height:40px; }
+.swatches { display:flex; gap:8px; align-items:center; flex-wrap:wrap; }
+.swatches button { width:24px; height:24px; border-radius:50%; border:1px solid var(--line); cursor:pointer; padding:0; }
+.swatches button[aria-pressed=true] { outline:2px solid var(--fg); outline-offset:2px; }
 .colors { display:flex; gap:16px; flex-wrap:wrap; }
 .colors label { display:flex; gap:8px; align-items:center; font-size:14px; }
 input[type=color] { width:36px; height:28px; border:1px solid var(--line); border-radius:6px; background:none; padding:2px; cursor:pointer; }
@@ -89,6 +92,13 @@ details[open] summary { margin-bottom:14px; }
       <label class="f"><span data-t="model"></span><input type="text" id="model" class="ltr"></label>
     </div>
     <p class="hint" id="localHelp"></p>
+    <div class="f" id="modelRow"><span data-t="modelTitle"></span>
+      <span class="line"><span class="hint" id="modelAuto"></span><button class="b" id="modelAdv" type="button" aria-expanded="false" aria-controls="modelPick" data-t="advancedBtn"></button></span>
+      <div class="rows" id="modelPick" hidden>
+        <select id="modelSel" aria-label="Model"></select>
+        <p class="hint" id="modelNote"></p>
+      </div>
+    </div>
   </div>
 </section>
 
@@ -119,6 +129,12 @@ details[open] summary { margin-bottom:14px; }
   <h2 data-t="look"></h2>
   <div class="rows">
     <div class="stage" id="stage"><div class="pill" id="pill"></div></div>
+    <div class="f"><span data-t="style"></span>
+      <div class="seg" id="overlay_style"><button data-v="dots" data-t="dots"></button><button data-v="lines" data-t="lines"></button></div>
+    </div>
+    <div class="f"><span data-t="barColor"></span>
+      <div class="swatches" id="swatches"></div>
+    </div>
     <div class="colors">
       <label><input type="color" id="overlay_bg"><span data-t="bg"></span></label>
       <label><input type="color" id="overlay_bars"><span data-t="bars"></span></label>
@@ -171,12 +187,16 @@ const T = {
     keySaved: 'Saved key', keyEnv: 'A key is set in an environment variable.',
     getKey: 'Get a free key at', getKeySteps: 'Sign in, click Create API Key, copy it and paste it here. It is stored only on this computer.',
     baseUrl: 'Server base URL', model: 'Model (empty = default)',
+    modelTitle: 'Model', advancedBtn: 'Advanced', autoModel: 'Automatic (recommended)',
+    autoUses: m => `Automatic: ${m}, the one we recommend for this service.`,
+    autoNote: 'Automatic follows our recommendation, so it switches if a better model comes out.',
+    pinned: m => `You chose ${m}.`,
     localOk: 'Runs offline on this computer. The first use downloads the model.',
     localMissing: 'Local mode needs an extra install. In a terminal run: uv tool install --force "hold-dictate[local]"',
     speaking: 'Speaking', language: 'Language', auto: 'Detect automatically', he: 'Hebrew (with English words)',
     hotkey: 'Hold-to-talk hotkey', change: 'Change', press: 'Press the keys…', hotkeyHint: 'Use a modifier (Alt, Ctrl, Shift, Win/Cmd) plus a letter, digit, Space or F-key. Esc cancels.',
     sounds: 'Play short sounds when recording starts and stops',
-    look: 'Recording pill', bg: 'Background', bars: 'Bars', reset: 'Reset', position: 'Position', bottom: 'Bottom', top: 'Top', size: 'Size',
+    look: 'Recording pill', style: 'Style', dots: 'Dots', lines: 'Lines', barColor: 'Colour', bg: 'Background', bars: 'Custom', reset: 'Reset', position: 'Position', bottom: 'Bottom', top: 'Top', size: 'Size',
     lookHint: 'The pill shows on Linux (Wayland with quickshell). Windows and macOS use the sounds for now.',
     updates: 'Updates', autoUpdate: 'Install updates automatically', check: 'Check now', install: 'Update now',
     upToDate: 'You have the latest version.', availableV: v => `Version ${v} is available.`, installing: 'Installing in the background. hold-dictate restarts when it is done.',
@@ -193,12 +213,16 @@ const T = {
     keySaved: 'מפתח שמור', keyEnv: 'מוגדר מפתח במשתנה סביבה.',
     getKey: 'מפתח חינמי אפשר לקבל ב-', getKeySteps: 'נכנסים, לוחצים Create API Key, מעתיקים ומדביקים כאן. המפתח נשמר רק במחשב הזה.',
     baseUrl: 'כתובת השרת', model: 'מודל (ריק = ברירת מחדל)',
+    modelTitle: 'מודל', advancedBtn: 'מתקדם', autoModel: 'אוטומטי (מומלץ)',
+    autoUses: m => `אוטומטי: ${m}, המודל שאנחנו ממליצים עליו לשירות הזה.`,
+    autoNote: 'אוטומטי הולך לפי ההמלצה שלנו, כך שהוא יתחלף אם ייצא מודל טוב יותר.',
+    pinned: m => `בחרתם ${m}.`,
     localOk: 'רץ במחשב בלי אינטרנט. בשימוש הראשון המודל יורד.',
     localMissing: 'מצב מקומי דורש התקנה נוספת. בטרמינל: uv tool install --force "hold-dictate[local]"',
     speaking: 'דיבור', language: 'שפה', auto: 'זיהוי אוטומטי', he: 'עברית (עם מילים באנגלית)',
     hotkey: 'קיצור מקלדת (מחזיקים ומדברים)', change: 'שינוי', press: 'לחצו על המקשים…', hotkeyHint: 'מקש בקרה (Alt, Ctrl, Shift, Win/Cmd) ועוד אות, ספרה, רווח או F. ‏Esc מבטל.',
     sounds: 'צליל קצר בתחילת ההקלטה ובסופה',
-    look: 'חלון ההקלטה', bg: 'רקע', bars: 'פסים', reset: 'איפוס', position: 'מיקום', bottom: 'למטה', top: 'למעלה', size: 'גודל',
+    look: 'חלון ההקלטה', style: 'סגנון', dots: 'נקודות', lines: 'קווים', barColor: 'צבע', bg: 'רקע', bars: 'צבע משלכם', reset: 'איפוס', position: 'מיקום', bottom: 'למטה', top: 'למעלה', size: 'גודל',
     lookHint: 'החלון מוצג בלינוקס (Wayland עם quickshell). ב-Windows וב-macOS יש בינתיים צלילים.',
     updates: 'עדכונים', autoUpdate: 'להתקין עדכונים אוטומטית', check: 'בדיקה עכשיו', install: 'לעדכן עכשיו',
     upToDate: 'יש לכם את הגרסה האחרונה.', availableV: v => `גרסה ${v} זמינה.`, installing: 'מתקין ברקע. hold-dictate יופעל מחדש בסיום.',
@@ -252,7 +276,7 @@ function render(s) {
   for (const [k, v] of [...Object.entries(s.providers), ['local', { label: L === 'he' ? 'מקומי (בלי אינטרנט)' : 'Local (offline)' }]]) {
     const b = document.createElement('button');
     b.type = 'button'; b.textContent = v.label.replace(/ \(.*/, ''); b.setAttribute('aria-pressed', String(c.provider === k));
-    b.onclick = () => c.provider !== k && save({ provider: k });
+    b.onclick = () => c.provider !== k && save({ provider: k, ...(k === 'groq' || k === 'openai' ? { model: '' } : {}) });
     prov.append(b);
   }
   const local = c.provider === 'local', p = s.providers[c.provider];
@@ -273,7 +297,10 @@ function render(s) {
   if (![...$('language').options].some(o => o.value === c.language)) { const o = new Option(c.language, c.language); $('language').add(o); $('language').value = c.language; }
   if (!recording) $('hotkey').textContent = pretty(c.hotkey);
   $('sounds').checked = c.sounds;
+  renderModel(s);
   $('overlay_bg').value = c.overlay_bg; $('overlay_bars').value = c.overlay_bars;
+  document.querySelectorAll('#overlay_style button').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.v === c.overlay_style)));
+  document.querySelectorAll('#swatches button').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.v === c.overlay_bars.toLowerCase())));
   document.querySelectorAll('#overlay_position button').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.v === c.overlay_position)));
   $('overlay_size').value = c.overlay_size;
   $('lookHint').hidden = s.overlay;
@@ -290,6 +317,30 @@ function render(s) {
   $('cfgPath').textContent = s.config_path;
   drawPill();
 }
+
+// ---- model: Automatic unless you open Advanced and pick one ----
+let modelOpen = null; // null until the first render, then the user's choice
+function renderModel(s) {
+  const c = s.config, local = c.provider === 'local';
+  $('modelRow').hidden = c.provider === 'custom'; // a custom server takes a typed model name above
+  if (c.provider === 'custom') return;
+  const list = local ? s.local_models : s.providers[c.provider].models;
+  const best = list[0][0], value = local ? c.local_model : c.model;
+  const auto = local ? value === best : !value;
+  if (modelOpen === null) modelOpen = !auto;
+  $('modelAuto').textContent = auto ? t('autoUses')(best) : t('pinned')(value);
+  $('modelAdv').setAttribute('aria-expanded', String(modelOpen));
+  $('modelPick').hidden = !modelOpen;
+  const sel = $('modelSel'); sel.innerHTML = '';
+  sel.add(new Option(t('autoModel'), local ? best : ''));
+  for (const [id] of list) if (!(local && id === best)) sel.add(new Option(id, id));
+  if (value && ![...sel.options].some(o => o.value === value)) sel.add(new Option(value, value));
+  sel.value = auto ? (local ? best : '') : value;
+  const note = auto ? t('autoNote') : (list.find(m => m[0] === value) || [, ''])[1];
+  $('modelNote').textContent = note;
+}
+$('modelAdv').onclick = () => { modelOpen = !modelOpen; renderModel(S); };
+$('modelSel').addEventListener('change', () => save({ [S.config.provider === 'local' ? 'local_model' : 'model']: $('modelSel').value }));
 
 // ---- API key ----
 async function saveKey() {
@@ -351,11 +402,25 @@ function drawPill() {
   pill.style.setProperty('--s', c.overlay_size * 0.9);
   pill.style.top = c.overlay_position === 'top' ? '24px' : 'auto';
   pill.style.bottom = c.overlay_position === 'top' ? 'auto' : '24px';
-  dotColor = c.overlay_bars; paintPill();
+  dotColor = c.overlay_bars; lineStyle = c.overlay_style === 'lines'; paintPill();
 }
+let lineStyle = false;
+const LN = 27, lineH = new Array(LN).fill(0.03);
 function paintPill() {
   ctx.setTransform(2, 0, 0, 2, 0, 0); ctx.clearRect(0, 0, 192, 40);
-  ctx.fillStyle = dotColor; ctx.beginPath();
+  ctx.fillStyle = dotColor;
+  if (lineStyle) {
+    // the original look: 3 px rounded bars, brighter as they grow
+    const x0 = (192 - LN * 6 + 3) / 2;
+    for (let i = 0; i < LN; i++) {
+      const v = lineH[i], h = 3 + v * 30;
+      ctx.globalAlpha = 0.45 + 0.55 * Math.min(1, v * 1.6);
+      ctx.beginPath(); ctx.roundRect(x0 + i * 6, (40 - h) / 2, 3, h, 1.5); ctx.fill();
+    }
+    ctx.globalAlpha = 1;
+    return;
+  }
+  ctx.beginPath();
   const maxH = ROWS / 2 - 1, x0 = (192 - N * 4 * CELL + CELL) / 2, y0 = (40 - ROWS * CELL) / 2;
   for (let i = 0; i < N; i++) {
     const h = Math.max(1, heights[i] * maxH), cx = x0 + i * 4 * CELL;
@@ -377,6 +442,12 @@ function frame(now) {
     const v = Math.min(1, Math.max(0, 2.4 * env * taper * (0.78 + 0.22 * Math.sin(tt * 9 + i * 1.7)) * (0.7 + 0.3 * Math.sin(tt * 2 - d * 0.5))));
     heights[i] += (0.035 + v * 0.97 - heights[i]) * 0.25;
   }
+  const lm = (LN - 1) / 2;
+  for (let i = 0; i < LN; i++) {
+    const d = Math.abs(i - lm), taper = 1 - Math.pow(d / (lm + 1), 2) * 0.55;
+    const v = Math.min(1, Math.max(0, 1.3 * env * taper * (0.78 + 0.22 * Math.sin(tt * 9 + i * 1.7)) * (0.7 + 0.3 * Math.sin(tt * 2 - d * 0.4))));
+    lineH[i] += (v - lineH[i]) * 0.25;
+  }
   paintPill();
 }
 if (!matchMedia('(prefers-reduced-motion: reduce)').matches) requestAnimationFrame(frame); else paintPill();
@@ -387,7 +458,14 @@ for (const id of ['overlay_bg', 'overlay_bars']) {
 $('overlay_size').addEventListener('input', () => { S.config.overlay_size = parseFloat($('overlay_size').value); drawPill(); });
 $('overlay_size').addEventListener('change', () => save({ overlay_size: parseFloat($('overlay_size').value) }));
 document.querySelectorAll('#overlay_position button').forEach(b => b.onclick = () => save({ overlay_position: b.dataset.v }));
-$('resetLook').onclick = () => save({ overlay_bg: '#0a0a0b', overlay_bars: '#6b80ff', overlay_position: 'bottom', overlay_size: 1 });
+document.querySelectorAll('#overlay_style button').forEach(b => b.onclick = () => save({ overlay_style: b.dataset.v }));
+for (const [v, name] of [['#6b80ff', 'Blue'], ['#ffffff', 'White'], ['#4cc38a', 'Green'], ['#ffb020', 'Amber'], ['#ff6b8b', 'Pink'], ['#b18cff', 'Violet']]) {
+  const b = document.createElement('button');
+  b.type = 'button'; b.dataset.v = v; b.title = name; b.setAttribute('aria-label', name); b.style.background = v;
+  b.onclick = () => save({ overlay_bars: v });
+  $('swatches').append(b);
+}
+$('resetLook').onclick = () => save({ overlay_bg: '#0a0a0b', overlay_bars: '#6b80ff', overlay_position: 'bottom', overlay_size: 1, overlay_style: 'dots' });
 
 // ---- updates and service ----
 $('checkUpd').onclick = async () => { $('checkUpd').disabled = true; try { S = await api('/api/update/check', {}); render(S); } finally { $('checkUpd').disabled = false; } };

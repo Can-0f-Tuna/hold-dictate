@@ -64,7 +64,7 @@ class Feedback:
             self._ensure_overlay()
         if self.cfg:
             c = self.cfg
-            self._send(f"C {c.overlay_bg} {c.overlay_bars} {c.overlay_position} {c.overlay_size:.2f}")
+            self._send(f"C {c.overlay_bg} {c.overlay_bars} {c.overlay_position} {c.overlay_size:.2f} {c.overlay_style}")
         self._send("S")
         self._beep("start")
 

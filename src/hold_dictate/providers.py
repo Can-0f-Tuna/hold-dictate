@@ -90,6 +90,7 @@ class LocalTranscriber:
     def __init__(self, cfg: Config):
         self.cfg = cfg
         self.model = None
+        self.loaded = ""  # name of the model in memory, so a change in the settings loads the new one
 
     @staticmethod
     def available() -> bool:
@@ -100,6 +101,8 @@ class LocalTranscriber:
             return False
 
     def load(self):
+        if self.model is not None and self.loaded != self.cfg.local_model:
+            self.model = None
         if self.model is None:
             try:
                 from faster_whisper import WhisperModel
@@ -112,6 +115,7 @@ class LocalTranscriber:
             self.model = WhisperModel(
                 self.cfg.local_model, device="cpu", compute_type="int8", cpu_threads=max(1, (os.cpu_count() or 2) // 2)
             )
+            self.loaded = self.cfg.local_model
         return self.model
 
     def unload(self):

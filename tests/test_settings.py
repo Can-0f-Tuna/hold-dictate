@@ -63,11 +63,32 @@ def test_save_applies_and_persists(server, tmp_path):
     assert on_disk.hotkey == "ctrl+alt+d" and on_disk.overlay_bg == "#112233"
 
 
-@pytest.mark.parametrize("bad", [{"hotkey": "space"}, {"overlay_bg": "red"}, {"provider": "x"}, {"sounds": "yes"}, {"nope": 1}])
+@pytest.mark.parametrize("bad", [{"hotkey": "space"}, {"overlay_bg": "red"}, {"provider": "x"}, {"sounds": "yes"}, {"nope": 1}, {"overlay_style": "stars"}])
 def test_save_rejects_bad_values(server, bad):
     code, body = call(server, "/api/config", bad)
     assert code == 400 and body["error"]
     assert server.cfg.hotkey == "alt+space"
+
+
+def test_style_and_models(server, tmp_path):
+    _, state = call(server, "/api/state")
+    assert state["config"]["overlay_style"] == "dots" and state["config"]["model"] == ""
+    assert state["providers"]["groq"]["models"][0][0] == state["providers"]["groq"]["model"]
+    assert state["local_models"][0][0] == Config().local_model  # Automatic for local = the first one
+    call(server, "/api/config", {"overlay_style": "lines", "model": "whisper-large-v3-turbo", "local_model": ""})
+    on_disk = config.load(tmp_path / "config.toml")
+    assert on_disk.overlay_style == "lines" and on_disk.effective_model() == "whisper-large-v3-turbo"
+    assert on_disk.local_model == "small"
+
+
+def test_overlay_gets_the_style():
+    from hold_dictate.feedback import Feedback
+    fb = Feedback.__new__(Feedback)
+    fb.cfg, fb.proc, fb.sent = Config(overlay_style="lines"), None, []
+    fb.events = type("W", (), {"write": lambda self, line: fb.sent.append(line)})()
+    fb._ensure_overlay = lambda: None
+    fb.recording()
+    assert fb.sent[0].split() == ["C", "#0a0a0b", "#6b80ff", "bottom", "1.00", "lines"] and fb.sent[1] == "S\n"
 
 
 def test_hebrew_language_maps_to_prompt(server):

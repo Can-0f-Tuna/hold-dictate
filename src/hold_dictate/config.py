@@ -19,6 +19,10 @@ PROVIDERS = {
         "label": "Groq",
         "base_url": "https://api.groq.com/openai/v1",
         "model": "whisper-large-v3",
+        "models": [
+            ["whisper-large-v3", "Most accurate, best for Hebrew and mixed languages"],
+            ["whisper-large-v3-turbo", "Faster and cheaper, a little less accurate"],
+        ],
         "keys_url": "https://console.groq.com/keys",
         "env": "GROQ_API_KEY",
     },
@@ -26,6 +30,11 @@ PROVIDERS = {
         "label": "OpenAI",
         "base_url": "https://api.openai.com/v1",
         "model": "gpt-4o-transcribe",
+        "models": [
+            ["gpt-4o-transcribe", "Most accurate"],
+            ["gpt-4o-mini-transcribe", "Faster and cheaper"],
+            ["whisper-1", "The older Whisper model"],
+        ],
         "keys_url": "https://platform.openai.com/api-keys",
         "env": "OPENAI_API_KEY",
     },
@@ -33,10 +42,23 @@ PROVIDERS = {
         "label": "Custom (any OpenAI-compatible server)",
         "base_url": "",
         "model": "whisper-1",
+        "models": [],  # any name the server knows, typed in by hand
         "keys_url": "",
         "env": "HOLD_DICTATE_API_KEY",
     },
 }
+
+
+# Models for provider = "local" (faster-whisper). The first one is what Automatic uses.
+LOCAL_MODELS = [
+    ["small", "Good balance of speed and accuracy (about 500 MB)"],
+    ["large-v3-turbo", "More accurate, slower on most computers (about 1.6 GB)"],
+    ["medium", "Accurate, slow (about 1.5 GB)"],
+    ["base", "Fast, less accurate (about 150 MB)"],
+    ["tiny", "Fastest, least accurate (about 75 MB)"],
+]
+
+OVERLAY_STYLES = ("dots", "lines")  # dots: the website's halftone bars; lines: the original thin bars
 
 
 def config_dir() -> Path:
@@ -59,17 +81,18 @@ class Config:
     provider: str = "groq"  # groq | openai | custom | local
     api_key: str = ""
     base_url: str = ""  # only for provider = "custom"; overrides the preset otherwise
-    model: str = ""  # empty = the provider's default
+    model: str = ""  # empty = Automatic: the provider's recommended model
     language: str = ""  # ISO code such as "en"; empty = auto-detect
     prompt: str = ""  # optional hint that nudges spelling and language mix
     hotkey: str = "alt+space"
-    local_model: str = "small"  # faster-whisper model name or Hugging Face repo
+    local_model: str = "small"  # faster-whisper model name or Hugging Face repo; "small" is Automatic
     local_fallback: bool = True  # use the local model when the cloud request fails (if installed)
     sounds: bool = True  # short beeps on start, stop and error
     min_hold: float = 0.3  # taps shorter than this (seconds) are ignored
     timeout: float = 15.0  # seconds before a cloud request is given up
     idle_unload_seconds: float = 900.0  # free the local model after this long unused
     auto_update: bool = True  # install new releases from GitHub once a day, while idle
+    overlay_style: str = "dots"  # dots | lines
     overlay_bg: str = "#0a0a0b"  # recording pill background (Linux overlay)
     overlay_bars: str = "#6b80ff"  # recording pill dot colour
     overlay_position: str = "bottom"  # bottom | top
