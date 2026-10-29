@@ -356,7 +356,7 @@ function saveState(kind, text) {
 async function save(changes) {
   saveState('saving');
   try { S = await api('/api/config', changes); render(S); saveState('saved'); return true; }
-  catch (e) { saveState('failed', e instanceof Stale ? 'Not saved' : `Not saved: ${e.message}`); if (S) render(S); return false; }
+  catch (e) { saveState('failed', e instanceof Stale || !reachable ? 'Not saved' : `Not saved: ${e.message}`); if (S) render(S); return false; }
 }
 const debounced = {};
 function saveSoon(id, value) { clearTimeout(debounced[id]); debounced[id] = setTimeout(() => save({ [id]: value() }), 700); }
@@ -709,7 +709,7 @@ addEventListener('resize', () => drawWave(performance.now()));
 
 // ---- start ----
 saveState('idle');
-const refresh = () => api('/api/state').then(s => { S = s; render(s); if ($('save').classList.contains('failed')) saveState('idle'); }).catch(e => { if (!(e instanceof Stale)) saveState('failed', e.message[0].toUpperCase() + e.message.slice(1)); });
+const refresh = () => api('/api/state').then(s => { S = s; render(s); if ($('save').classList.contains('failed')) saveState('idle'); }).catch(() => {}); // the hero and the stale banner already say what went wrong
 if (S) render(S); else refresh();
 window.addEventListener('focus', () => { if (!recording && !document.activeElement.matches('input[type=text], input[type=password], input[type=number]')) refresh(); });
 </script>
