@@ -22,7 +22,7 @@ PAGE = Path(__file__).with_name("settings.html")
 FONTS = {"/fonts/geist.woff2": "geist-latin.woff2", "/fonts/geist-mono.woff2": "geist-mono-latin.woff2"}
 PORT = 47811
 SECRET_FIELDS = {"api_key"}
-EDITABLE = {f.name for f in fields(Config)} - {"idle_unload_seconds"}
+EDITABLE = {f.name for f in fields(Config)} - {"idle_unload_seconds", "api_key_service"}
 
 
 def runtime_file() -> Path:
@@ -97,7 +97,7 @@ class SettingsServer:
         cfg = self.cfg
         values = {k: v for k, v in asdict(cfg).items() if k in EDITABLE and k not in SECRET_FIELDS}
         values["languages"] = cfg.language_codes()
-        key = cfg.api_key
+        key = cfg.saved_key()
         updater = self.updater
         return {
             "version": __version__,
@@ -132,6 +132,8 @@ class SettingsServer:
             if name == "api_key" and not str(value).strip():
                 continue  # empty field means keep the saved key
             setattr(new, name, cfgmod.coerce(name, value))
+        if str(changes.get("api_key", "")).strip():
+            new.api_key_service = new.provider
         if new.provider not in (*PROVIDERS, "local"):
             raise ValueError("unknown provider")
         parse_hotkey(new.hotkey)
@@ -144,6 +146,8 @@ class SettingsServer:
         if not new.local_model:
             new.local_model = LOCAL_MODELS[0][0]
         new.overlay_size = min(1.5, max(0.75, new.overlay_size))
+        new.min_hold = min(2.0, max(0.0, new.min_hold))
+        new.timeout = min(120.0, max(3.0, new.timeout))
         for name in ("overlay_bg", "overlay_bars"):
             value = getattr(new, name)
             if not (len(value) == 7 and value.startswith("#") and all(c in "0123456789abcdefABCDEF" for c in value[1:])):

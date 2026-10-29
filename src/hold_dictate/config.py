@@ -141,6 +141,7 @@ def config_path() -> Path:
 class Config:
     provider: str = "groq"  # groq | openai | custom | local
     api_key: str = ""
+    api_key_service: str = ""  # the provider the key was saved for; a Groq key means nothing to OpenAI
     base_url: str = ""  # only for provider = "custom"; overrides the preset otherwise
     model: str = ""  # empty = Automatic: the provider's recommended model
     languages: str = ""  # the languages you speak, comma-separated codes such as "he,en"; empty = any language
@@ -163,8 +164,12 @@ class Config:
     def preset(self) -> dict:
         return PROVIDERS.get(self.provider, PROVIDERS["custom"])
 
+    def saved_key(self) -> str:
+        """The key from the config file, if it was saved for the provider in use."""
+        return self.api_key if self.api_key_service in ("", self.provider) else ""
+
     def effective_key(self) -> str:
-        return self.api_key or os.environ.get(self.preset()["env"], "") or os.environ.get("HOLD_DICTATE_API_KEY", "")
+        return self.saved_key() or os.environ.get(self.preset()["env"], "") or os.environ.get("HOLD_DICTATE_API_KEY", "")
 
     def effective_base_url(self) -> str:
         return (self.base_url or self.preset()["base_url"]).rstrip("/")
@@ -187,6 +192,8 @@ def load(path: Path | None = None) -> Config:
                 setattr(cfg, key, value)
         if "languages" not in data:
             migrate_language(cfg, data)
+        if cfg.api_key and "api_key_service" not in data:
+            cfg.api_key_service = cfg.provider  # before 0.5 the key always belonged to the saved provider
     return cfg
 
 

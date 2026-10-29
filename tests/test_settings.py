@@ -168,3 +168,19 @@ def test_updater_skips_dev_checkouts():
     u = updater.Updater(Config())
     assert u.can_update()  # tests run from a checkout, not a uv tool install
     assert u.install() is False
+
+
+def test_a_key_belongs_to_its_service(server):
+    call(server, "/api/config", {"api_key": "gsk_newkey12345"})
+    assert server.cfg.api_key_service == "groq"
+    _, state = call(server, "/api/config", {"provider": "openai"})
+    assert state["key_hint"] == "" and server.cfg.effective_key() == ""  # a Groq key does not work with OpenAI
+    _, state = call(server, "/api/config", {"provider": "groq"})
+    assert state["key_hint"] == "…2345"
+
+
+def test_old_configs_keep_their_key(tmp_path):
+    p = tmp_path / "c.toml"
+    p.write_text('provider = "openai"\napi_key = "sk-old"\n')
+    cfg = config.load(p)
+    assert cfg.api_key_service == "openai" and cfg.effective_key() == "sk-old"

@@ -25,7 +25,7 @@
     color-scheme: dark;
     --paper:#0a0a0b; --surface:#19191c; --soft:#1f1f22; --ink:#ededeb; --ink-2:#c9c9c5; --muted:#9b9ba0;
     --line:#27272b; --line-2:#3a3a3f; --edge:#68686f; --track:#68686f; --accent:#6b80ff; --on-accent:#0a0a0b; --ok:#7fe0a0; --err:#ff6b6b;
-    --key:#2a2a2f; --key-edge:#5a5a62; --key-shade:#050506; --key-glow:#000; --key-hi:rgba(255,255,255,.16);
+    --key:#323238; --key-edge:#64646c; --key-shade:#050506; --key-glow:#000; --key-hi:rgba(255,255,255,.16);
   }
 }
 * { box-sizing:border-box; }
@@ -48,7 +48,7 @@ code { font:500 .9em var(--mono); background:var(--soft); border:1px solid var(-
 .save { display:flex; align-items:center; gap:var(--s-2); font-size:var(--t-sm); color:var(--muted); white-space:nowrap; }
 .save svg { width:15px; height:15px; flex:none; }
 .save.saving { color:var(--ink-2); }
-.save.saved { color:var(--ok); }
+.save.saved { color:var(--ink); }
 .save.failed { color:var(--err); white-space:normal; }
 
 /* banner for problems that block everything */
@@ -76,6 +76,7 @@ code { font:500 .9em var(--mono); background:var(--soft); border:1px solid var(-
 .setup h1 { margin:0; font-size:clamp(30px, 4.6vw, 48px); font-weight:600; letter-spacing:-.02em; line-height:1.1; }
 .setup .slot { margin-top:var(--s-6); max-width:560px; }
 .setup .slot:empty { display:none; }
+#svcMsg { margin-top:var(--s-2); }
 .setup .slot .cmd { display:block; padding:var(--s-3) var(--s-4); font-size:var(--t-sm); border-radius:var(--r-md); user-select:all; }
 .lede { margin-top:var(--s-4); font-size:var(--t-md); color:var(--muted); max-width:56ch; }
 .hero .acts { display:flex; flex-wrap:wrap; align-items:center; gap:var(--s-3); margin-top:var(--s-5); }
@@ -330,7 +331,9 @@ let S = /*STATE*/null; // the last state from the server, filled in when the pag
 // ---- talking to hold-dictate ----
 class Stale extends Error {}
 async function api(path, body) {
-  const res = await fetch(path, { method: body === undefined ? 'GET' : 'POST', headers: { 'X-Token': TOKEN, 'Content-Type': 'application/json' }, body: body === undefined ? undefined : JSON.stringify(body) });
+  let res;
+  try { res = await fetch(path, { method: body === undefined ? 'GET' : 'POST', headers: { 'X-Token': TOKEN, 'Content-Type': 'application/json' }, body: body === undefined ? undefined : JSON.stringify(body) }); }
+  catch { throw new Error("can't reach hold-dictate. Is it running?"); }
   if (res.status === 403) { $('stale').hidden = false; throw new Stale('reload the page'); }
   const data = await res.json().catch(() => ({ error: res.statusText }));
   if (!res.ok) throw new Error(data.error || res.statusText);
@@ -375,18 +378,18 @@ function keycaps(parts, tail) {
 // What stops dictation from working, most basic first. null when it is ready.
 function blocker(s) {
   const c = s.config, service = ((s.providers[c.provider] || {}).label || '').replace(/ \(.*/, '');
-  if (!s.running) return { status: 'Not running', title: 'hold-dictate isn\'t running.', lede: 'Start it, and it also starts every time you log in.', act: 'start' };
-  if (s.problem) return { status: 'The shortcut can\'t work yet', title: 'The shortcut can\'t work yet.', lede: s.problem };
-  if (c.provider === 'local') return s.local_installed ? null : { status: 'Not set up yet', title: 'Install the offline model to start.', lede: 'It runs on this computer without internet. Run this in a terminal, then reload this page:', code: 'uv tool install --force "hold-dictate[local]"' };
-  if (c.provider === 'custom' && !c.base_url) return { status: 'Not set up yet', title: 'Add your server\'s address to start.', lede: 'A custom service needs the address of any server that speaks the OpenAI transcription API.', move: 'customRows' };
-  if (!s.key_hint && !s.key_from_env) return { status: 'Not set up yet', title: 'Paste an API key to start dictating.', lede: `hold-dictate sends what you say to a speech service, which turns it into text. You're set up for ${service}${c.provider === 'groq' ? ', which is free' : ''}. You can pick another service below.`, move: 'keyRows' };
+  if (!s.running) return { title: 'hold-dictate isn\'t running.', lede: 'Start it, and it also starts every time you log in.', act: 'start' };
+  if (s.problem) return { title: 'The shortcut can\'t work yet.', lede: s.problem };
+  if (c.provider === 'local') return s.local_installed ? null : { title: 'Install the offline model to start.', lede: 'It runs on this computer without internet. Run this in a terminal, then reload this page:', code: 'uv tool install --force "hold-dictate[local]"' };
+  if (c.provider === 'custom' && !c.base_url) return { title: 'Add your server\'s address to start.', lede: 'A custom service needs the address of any server that speaks the OpenAI transcription API.', move: 'customRows' };
+  if (!s.key_hint && !s.key_from_env) return { title: 'Paste an API key to start dictating.', lede: `hold-dictate sends what you say to a speech service, which turns it into text. You're set up for ${service}${c.provider === 'groq' ? ', which is free' : ''}. You can pick another service below.`, move: 'keyRows' };
   return null;
 }
 
 function status(s) {
   const b = blocker(s);
   $('status').classList.toggle('warn', !!b);
-  $('statusText').textContent = b ? b.status : 'Ready';
+  $('statusText').textContent = b ? 'Dictation is off' : 'Ready';
   // When dictation can't work, the hero becomes the fix, and the shortcut waits until it is true.
   $('readyView').hidden = !!b; $('setupView').hidden = !b; $('startSvc').hidden = true;
   for (const [id, home] of Object.entries(homes)) if ($(id).parentNode !== home.parent && (!b || b.move !== id)) home.parent.insertBefore($(id), home.next);
@@ -432,7 +435,7 @@ function renderService(s) {
   for (const [k, label] of [...Object.entries(s.providers).map(([k, v]) => [k, v.label.replace(/ \(.*/, '')]), ['local', 'Offline']]) {
     const b = document.createElement('button');
     b.type = 'button'; b.textContent = label; b.setAttribute('aria-pressed', String(c.provider === k));
-    b.onclick = () => c.provider !== k && save({ provider: k, ...(k === 'groq' || k === 'openai' ? { model: '' } : {}) });
+    b.onclick = () => { if (c.provider === k) return; $('key').value = ''; $('keyMsg').className = 'note'; $('keyMsg').textContent = ''; save({ provider: k, ...(k === 'groq' || k === 'openai' ? { model: '' } : {}) }); };
     prov.append(b);
   }
   const local = c.provider === 'local', p = s.providers[c.provider];
@@ -687,7 +690,7 @@ function drawWave(now) {
   if (wave.width !== Math.round(w * r)) { wave.width = Math.round(w * r); wave.height = Math.round(h * r); }
   wctx.setTransform(r, 0, 0, r, 0, 0); wctx.clearRect(0, 0, w, h);
   const css = getComputedStyle(document.documentElement), cell = 7, cols = Math.floor(w / cell), rows = Math.floor(h / cell), mid = rows / 2;
-  const blocked = $('status').classList.contains('warn'), tt = blocked ? 2.2 : now / 1000, live = blocked ? 0.45 : 1;
+  const blocked = $('status').classList.contains('warn'), tt = blocked ? 2.2 : now / 1000, live = blocked ? 0.7 : 1;
   for (let i = 0; i < cols; i++) {
     const x = i / cols, env = Math.sin(Math.PI * x) * (0.55 + 0.45 * Math.sin(tt * 1.3 + i * 0.35) * Math.sin(tt * 0.7 + i * 0.11));
     const amp = Math.max(0.6 / mid, env * live) * mid * 0.92, accent = !blocked;
@@ -695,7 +698,7 @@ function drawWave(now) {
       const d = Math.abs(j + 0.5 - mid);
       if (d > amp) continue;
       const core = accent && d < amp * 0.45;
-      wctx.fillStyle = core ? css.getPropertyValue('--accent') : css.getPropertyValue('--line-2');
+      wctx.fillStyle = core ? css.getPropertyValue('--accent') : css.getPropertyValue(blocked ? '--edge' : '--line-2');
       const sz = core ? 3 : 2.4;
       wctx.fillRect(i * cell + (cell - sz) / 2, j * cell + (cell - sz) / 2, sz, sz);
     }
@@ -707,7 +710,7 @@ addEventListener('resize', () => drawWave(performance.now()));
 
 // ---- start ----
 saveState('idle');
-const refresh = () => api('/api/state').then(s => { S = s; render(s); }).catch(e => { if (!(e instanceof Stale)) saveState('failed', e.message); });
+const refresh = () => api('/api/state').then(s => { S = s; render(s); if ($('save').classList.contains('failed')) saveState('idle'); }).catch(e => { if (!(e instanceof Stale)) saveState('failed', e.message[0].toUpperCase() + e.message.slice(1)); });
 if (S) render(S); else refresh();
 window.addEventListener('focus', () => { if (!recording && !document.activeElement.matches('input[type=text], input[type=password], input[type=number]')) refresh(); });
 </script>

@@ -57,7 +57,7 @@ def cmd_setup(args) -> int:
                 print("  2. Sign in (or create a free account)")
                 print("  3. Click 'Create API Key' and copy it")
             key = getpass.getpass("\nPaste the key here (nothing is shown as you type): ").strip()
-        cfg.api_key = key
+        cfg.api_key, cfg.api_key_service = key, choice
         from .providers import check_api
         problem = check_api(cfg)
         print("Key works." if not problem else f"Could not verify the key: {problem}")
