@@ -5,9 +5,10 @@ volume changes, never the system volume, so no volume popup shows on the screen.
 stream (PipeWire or PulseAudio, through pactl), Windows each app's session (pycaw), macOS the Music and
 Spotify apps (macOS has no per-app volume for other apps).
 
-Sound going to headphones, a headset or Bluetooth is left alone: the microphone cannot hear it, and a
-Bluetooth headset switches to its call mode when the microphone opens, so changing volumes there only
-causes trouble."""
+On Linux and Windows, sound going to headphones, a headset or Bluetooth is left alone: the microphone
+cannot hear it, and a Bluetooth headset switches to its call mode when the microphone opens, so changing
+volumes there only causes trouble. macOS has no quick way to ask which output is in use, and lowering
+Spotify or Music inside the app is harmless with any output, so it always does that."""
 import atexit
 import json
 import os

@@ -19,12 +19,24 @@ from . import __version__, config as cfgmod, ducking
 from .config import DUCK_MODES, LANGUAGES, LOCAL_MODELS, OVERLAY_STYLES, PROVIDERS, Config
 
 PAGE = Path(__file__).with_name("settings.html")
-STALE_PAGE = (
-    b'<!doctype html><meta charset="utf-8"><meta name="color-scheme" content="light dark"><title>hold-dictate settings</title>'
-    b'<body style="font:16px/1.6 system-ui,sans-serif;max-width:560px;margin:15vh auto;padding:0 24px">'
-    b"<h1 style=\"font-size:24px\">This settings link has expired.</h1>"
-    b"<p>Open the settings again from the hold-dictate icon, or run <code>hold-dictate settings</code> in a terminal.</p>"
-)
+REOPEN = {"linux": "from your app menu (hold-dictate settings)", "darwin": "from the hold-dictate icon in the menu bar"}
+STALE_PAGE = f"""<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark"><title>hold-dictate settings</title>
+<style>
+@font-face {{ font-family:"Geist"; src:url(/fonts/geist.woff2) format("woff2"); font-weight:100 900; }}
+:root {{ --paper:#fcfcfb; --ink:#0c0c0d; --muted:#6a6a6f; --soft:#f2f2ef; --line:#e7e7e3; }}
+@media (prefers-color-scheme: dark) {{ :root {{ --paper:#0a0a0b; --ink:#ededeb; --muted:#9b9ba0; --soft:#1f1f22; --line:#27272b; }} }}
+body {{ margin:0; background:var(--paper); color:var(--ink); font:15px/1.55 "Geist",system-ui,sans-serif; -webkit-font-smoothing:antialiased; }}
+main {{ max-width:560px; margin:18vh auto; padding:0 24px; }}
+.brand {{ display:flex; align-items:center; gap:10px; font-weight:600; margin-bottom:48px; }}
+h1 {{ margin:0 0 12px; font-size:32px; font-weight:600; letter-spacing:-.02em; line-height:1.15; }}
+p {{ margin:0; color:var(--muted); font-size:17px; }}
+code {{ font:500 .9em ui-monospace,Menlo,Consolas,monospace; background:var(--soft); border:1px solid var(--line); border-radius:6px; padding:1px 5px; color:var(--ink); }}
+</style>
+<main><div class="brand"><svg width="22" height="22" viewBox="0 0 32 32" aria-hidden="true"><rect x="1" y="1" width="30" height="30" rx="8" fill="#000"/><rect x="3.5" y="2.5" width="25" height="23" rx="6" fill="#232326"/><g fill="#fff"><rect x="8" y="12" width="2.6" height="4" rx="1.3"/><rect x="12.4" y="9" width="2.6" height="10" rx="1.3"/><rect x="16.8" y="6.5" width="2.6" height="15" rx="1.3" fill="#5b74ff"/><rect x="21.2" y="10.5" width="2.6" height="7" rx="1.3"/></g></svg>hold-dictate</div>
+<h1>This settings link has expired.</h1>
+<p>Open the settings again {REOPEN.get("linux" if sys.platform.startswith("linux") else sys.platform, "from the hold-dictate icon next to the clock")}, or run <code>hold-dictate settings</code> in a terminal.</p></main>
+""".encode("utf-8")
 FONTS = {"/fonts/geist.woff2": "geist-latin.woff2", "/fonts/geist-mono.woff2": "geist-mono-latin.woff2"}
 PORT = 47811
 SECRET_FIELDS = {"api_key"}

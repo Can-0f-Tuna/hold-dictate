@@ -197,7 +197,7 @@ details .items { margin-top:var(--s-6); }
   <div class="save" id="save" role="status" aria-live="polite"></div>
 </header>
 
-<div class="banner err" id="stale" hidden><span>This page belongs to an earlier run of hold-dictate and can't save any more. Open the settings again from the hold-dictate icon, or run <code>hold-dictate settings</code>.</span></div>
+<div class="banner err" id="stale" hidden><span>This page belongs to an earlier run of hold-dictate and can't save any more. Open the settings again <span id="reopenWhere">from the hold-dictate icon</span>, or run <code>hold-dictate settings</code>.</span></div>
 </div>
 
 <section class="hero" aria-label="Status">
@@ -254,7 +254,7 @@ details .items { margin-top:var(--s-6); }
 <section class="group" aria-labelledby="h-lang">
   <header><h2 id="h-lang">Languages</h2><p>Pick every language you speak, and the transcriber listens for those.</p></header>
   <div class="items">
-    <p class="picked" id="picked"></p>
+    <p class="picked" id="picked">None picked, so any language is detected. Picking yours gives better results.</p>
     <div class="chips" id="chips" role="group" aria-label="Languages"></div>
     <select id="moreLang" class="more" aria-label="Add another language"></select>
   </div>
@@ -302,9 +302,9 @@ details .items { margin-top:var(--s-6); }
 </section>
 
 <section class="group" aria-labelledby="h-adv">
-  <header><h2 id="h-adv">Advanced</h2><p>Most people never need these.</p></header>
+  <header><h2 id="h-adv">Advanced</h2></header>
   <div class="items">
-    <details id="adv"><summary><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M6 3.5 10.5 8 6 12.5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>Show advanced settings</summary>
+    <details id="adv"><summary><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M6 3.5 10.5 8 6 12.5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>Spelling hint, offline fallback and timing</summary>
       <div class="items">
         <div class="item"><label class="label" for="prompt">Spelling hint</label><input type="text" id="prompt"><p class="hint">Words and names the transcriber should spell your way, for example Kubernetes or your colleagues' names.</p></div>
         <label class="row"><span class="text"><b>Use the offline model if the service fails</b><span class="hint">Only when the offline model is installed.</span></span><input type="checkbox" class="switch" id="local_fallback"></label>
@@ -333,7 +333,8 @@ class Stale extends Error {}
 async function api(path, body) {
   let res;
   try { res = await fetch(path, { method: body === undefined ? 'GET' : 'POST', headers: { 'X-Token': TOKEN, 'Content-Type': 'application/json' }, body: body === undefined ? undefined : JSON.stringify(body) }); }
-  catch { throw new Error("can't reach hold-dictate. Is it running?"); }
+  catch { reachable = false; if (S) render(S); retry(); throw new Error("can't reach hold-dictate. Is it running?"); }
+  reachable = true;
   if (res.status === 403) { $('stale').hidden = false; throw new Stale('open the settings again'); }
   const data = await res.json().catch(() => ({ error: res.statusText }));
   if (!res.ok) throw new Error(data.error || res.statusText);
@@ -374,9 +375,14 @@ function keycaps(parts, tail) {
   else el.append(word('and talk.'));
 }
 
+const where = s => s.platform.startsWith('linux') ? 'from your app menu (hold-dictate settings)' : s.platform === 'darwin' ? 'from the hold-dictate icon in the menu bar' : 'from the hold-dictate icon next to the clock';
+
 // What stops dictation from working, most basic first. null when it is ready.
+let reachable = true, retryTimer = 0;
+function retry() { if (!retryTimer) retryTimer = setTimeout(() => { retryTimer = 0; refresh(); }, 3000); }
 function blocker(s) {
   const c = s.config, service = ((s.providers[c.provider] || {}).label || '').replace(/ \(.*/, '');
+  if (!reachable) return { title: 'Can\'t reach hold-dictate.', lede: `It may have quit, or it's restarting after an update. Start it again ${where(s)}, or run hold-dictate in a terminal. This page reconnects by itself.` };
   if (!s.running) return { title: 'hold-dictate isn\'t running.', lede: 'Start it, and it also starts every time you log in.', act: 'start' };
   if (s.problem) return { title: 'The shortcut can\'t work yet.', lede: s.problem };
   if (c.provider === 'local') return s.local_installed ? null : { title: 'Install the offline model to start.', lede: 'It runs on this computer without internet. Run this in a terminal, then reload this page:', code: 'uv tool install --force "hold-dictate[local]"' };
@@ -406,6 +412,7 @@ function status(s) {
 function render(s) {
   const c = s.config;
   status(s);
+  $('reopenWhere').textContent = where(s);
   if (!recording) keycaps(c.hotkey.split('+'));
   renderService(s);
   renderLanguages(s);
@@ -504,14 +511,7 @@ $('key').addEventListener('input', () => { $('keyMsg').className = 'note'; $('ke
 // ---- languages: any number, kept in the order you picked them ----
 function renderLanguages(s) {
   const chosen = s.config.languages, names = Object.fromEntries(s.languages);
-  const list = chosen.map(c => names[c] || c);
-  const picked = $('picked'); picked.innerHTML = '';
-  if (!list.length) picked.append('None picked, so any language is detected. Picking yours gives better results.');
-  else {
-    picked.append('Listening for ');
-    list.forEach((n, i) => { if (i) picked.append(i === list.length - 1 ? ' and ' : ', '); picked.append(Object.assign(document.createElement('b'), { textContent: n })); });
-    picked.append('.');
-  }
+  $('picked').hidden = chosen.length > 0; // once some are picked, the filled chips say it
   const chips = $('chips'); chips.innerHTML = '';
   for (const code of [...new Set([...chosen, ...POPULAR])]) {
     const on = chosen.includes(code), b = document.createElement('button');
