@@ -1,7 +1,7 @@
 import importlib
 import pytest
 
-MODULES = ["config", "audio", "providers", "hotkey", "paste", "feedback", "service", "app", "cli"]
+MODULES = ["config", "audio", "providers", "hotkey", "paste", "feedback", "service", "app", "cli", "settings_ui", "updater", "tray"]
 
 
 @pytest.mark.parametrize("name", MODULES)

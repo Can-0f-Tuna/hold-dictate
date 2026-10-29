@@ -69,6 +69,11 @@ class Config:
     min_hold: float = 0.3  # taps shorter than this (seconds) are ignored
     timeout: float = 15.0  # seconds before a cloud request is given up
     idle_unload_seconds: float = 900.0  # free the local model after this long unused
+    auto_update: bool = True  # install new releases from GitHub once a day, while idle
+    overlay_bg: str = "#0a0a0b"  # recording pill background (Linux overlay)
+    overlay_bars: str = "#ffffff"  # recording pill bar colour
+    overlay_position: str = "bottom"  # bottom | top
+    overlay_size: float = 1.0  # scale of the pill, 0.75 to 1.5
 
     def preset(self) -> dict:
         return PROVIDERS.get(self.provider, PROVIDERS["custom"])
@@ -95,6 +100,18 @@ def load(path: Path | None = None) -> Config:
     return cfg
 
 
+def coerce(name: str, value):
+    """Converts a value from the settings page to the type of the Config field, or raises ValueError."""
+    default = getattr(Config(), name)
+    if isinstance(default, bool):
+        if not isinstance(value, bool):
+            raise ValueError(f"{name} must be true or false")
+        return value
+    if isinstance(default, float):
+        return float(value)
+    return str(value).strip()
+
+
 def _toml_value(value) -> str:
     if isinstance(value, bool):
         return "true" if value else "false"
@@ -107,7 +124,7 @@ def _toml_value(value) -> str:
 def save(cfg: Config, path: Path | None = None) -> Path:
     path = path or config_path()
     path.parent.mkdir(parents=True, exist_ok=True)
-    lines = ["# hold-dictate settings. Edit by hand or run `hold-dictate setup`.", ""]
+    lines = ["# hold-dictate settings. Edit by hand, or run `hold-dictate settings`.", ""]
     lines += [f"{k} = {_toml_value(v)}" for k, v in asdict(cfg).items()]
     path.write_text("\n".join(lines) + "\n", encoding="utf-8")
     if sys.platform != "win32":

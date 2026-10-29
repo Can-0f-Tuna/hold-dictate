@@ -31,7 +31,7 @@ def _explain_http_error(cfg: Config, e: urllib.error.HTTPError) -> str:
     except Exception:
         detail = e.reason
     hints = {
-        401: "the API key was rejected. Run `hold-dictate setup` to enter it again.",
+        401: "the API key was rejected. Enter it again in the settings (`hold-dictate settings`).",
         403: "access denied. Check that the key is allowed to use speech-to-text.",
         404: "endpoint or model not found. Check base_url and model in your config.",
         429: "rate limit or quota reached. Wait a bit, or switch provider.",
@@ -42,7 +42,7 @@ def _explain_http_error(cfg: Config, e: urllib.error.HTTPError) -> str:
 def transcribe_api(cfg: Config, audio) -> str:
     key, base = cfg.effective_key(), cfg.effective_base_url()
     if not key:
-        raise TranscribeError("no API key set. Run `hold-dictate setup`.")
+        raise TranscribeError("no API key set. Add one in the settings (`hold-dictate settings`).")
     if not base:
         raise TranscribeError("base_url is not set for the custom provider.")
     fields = {"model": cfg.effective_model(), "response_format": "json", "temperature": "0"}

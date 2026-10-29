@@ -1,6 +1,7 @@
 // Dictation overlay: a small dark pill with a live voice visualiser, shown at the bottom centre
 // of the screen while hold-dictate is recording. Runs for the whole session so it appears instantly.
 // Driven by lines the daemon appends to $XDG_RUNTIME_DIR/hold-dictate.events:
+//   C <bg> <bars> <bottom|top> <scale>   look, from the settings page (sent before each S)
 //   S              recording started: show
 //   L <level>      loudness of the last 20 ms, 0..1
 //   T              recording finished, transcribing
@@ -18,6 +19,10 @@ ShellRoot {
     property bool active: false
     property bool transcribing: false
     property real shown: 0.0
+    property color pillColor: "#0a0a0b"
+    property color barColor: "#ffffff"
+    property bool atTop: false
+    property real sizeScale: 1.0
     property real level: 0.0      // latest loudness from the daemon
     property real envelope: 0.0   // fast-attack, slow-release follower of level
     // Loudness history, newest first; the centre bar shows the newest and older values spread outwards.
@@ -25,7 +30,12 @@ ShellRoot {
 
     function handle(line) {
         const parts = line.trim().split(" ");
-        if (parts[0] === "L") {
+        if (parts[0] === "C" && parts.length >= 5) {
+            pillColor = parts[1];
+            barColor = parts[2];
+            atTop = parts[3] === "top";
+            sizeScale = Math.min(1.5, Math.max(0.75, parseFloat(parts[4]) || 1));
+        } else if (parts[0] === "L") {
             level = parseFloat(parts[1]) || 0;
         } else if (parts[0] === "S") {
             transcribing = false;
@@ -60,10 +70,12 @@ ShellRoot {
     PanelWindow {
         visible: root.active || root.shown > 0
         color: "transparent"
-        anchors.bottom: true
+        anchors.bottom: !root.atTop
+        anchors.top: root.atTop
         margins.bottom: 48
-        implicitWidth: 240
-        implicitHeight: 72
+        margins.top: 48
+        implicitWidth: Math.ceil(240 * root.sizeScale)
+        implicitHeight: Math.ceil(72 * root.sizeScale)
         exclusionMode: ExclusionMode.Ignore
         mask: Region {}
         WlrLayershell.layer: WlrLayer.Overlay
@@ -75,13 +87,13 @@ ShellRoot {
             height: 44
             radius: height / 2
             anchors.centerIn: parent
-            color: "#0a0a0b"
+            color: root.pillColor
             border.width: 1
             border.color: "#2a2a2e"
             opacity: root.shown
-            scale: 0.9 + 0.1 * root.shown
+            scale: (0.9 + 0.1 * root.shown) * root.sizeScale
             transform: Translate {
-                y: (1 - root.shown) * 8
+                y: (1 - root.shown) * (root.atTop ? -8 : 8)
             }
 
             Row {
@@ -100,7 +112,7 @@ ShellRoot {
                         height: h
                         radius: 1.5
                         anchors.verticalCenter: parent.verticalCenter
-                        color: "#ffffff"
+                        color: root.barColor
                         opacity: glow
                     }
                 }

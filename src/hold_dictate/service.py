@@ -23,6 +23,24 @@ def _linux_unit() -> Path:
     return Path(os.environ.get("XDG_CONFIG_HOME") or Path.home() / ".config") / "systemd" / "user" / "hold-dictate.service"
 
 
+def _linux_desktop() -> Path:
+    data = Path(os.environ.get("XDG_DATA_HOME") or Path.home() / ".local" / "share")
+    return data / "applications" / "hold-dictate-settings.desktop"
+
+
+def _write_linux_desktop():
+    """An app-menu entry that opens the settings page (Linux has no tray icon here)."""
+    entry = _linux_desktop()
+    entry.parent.mkdir(parents=True, exist_ok=True)
+    python = sys.executable
+    entry.write_text(
+        "[Desktop Entry]\nType=Application\nName=hold-dictate settings\n"
+        "Comment=API key, language, hotkey and look of hold-dictate\n"
+        f"Exec={python} -m hold_dictate settings --wait 5\nIcon=audio-input-microphone\n"
+        "Terminal=false\nCategories=Utility;Settings;\n"
+    )
+
+
 def _mac_plist() -> Path:
     return Path.home() / "Library" / "LaunchAgents" / f"{LABEL}.plist"
 
@@ -52,7 +70,9 @@ def install() -> str:
             '<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">\n'
             f'<plist version="1.0"><dict><key>Label</key><string>{LABEL}</string>'
             f"<key>ProgramArguments</key><array>{args}</array>"
-            "<key>RunAtLoad</key><true/><key>KeepAlive</key><true/>"
+            "<key>RunAtLoad</key><true/>"
+            # Restart after a crash, but not after Quit from the menu bar.
+            "<key>KeepAlive</key><dict><key>SuccessfulExit</key><false/></dict>"
             f"<key>StandardOutPath</key><string>{log}</string><key>StandardErrorPath</key><string>{log}</string>"
             "</dict></plist>\n"
         )
@@ -61,6 +81,7 @@ def install() -> str:
         if _sh("launchctl", "bootstrap", domain, str(plist)) != 0:
             return f"Wrote {plist}. Log out and back in to start it."
         return "Will start at every login, and is running now."
+    _write_linux_desktop()
     if not shutil.which("systemctl"):
         return "systemd was not found. Start `hold-dictate run` from your session's autostart instead."
     unit = _linux_unit()
@@ -72,7 +93,8 @@ def install() -> str:
         "[Install]\nWantedBy=graphical-session.target\n"
     )
     _sh("systemctl", "--user", "daemon-reload")
-    if _sh("systemctl", "--user", "enable", "--now", "hold-dictate.service") != 0:
+    # restart, not just start: after a reinstall the running copy must pick up the new version
+    if _sh("systemctl", "--user", "enable", "hold-dictate.service") != 0 or _sh("systemctl", "--user", "restart", "hold-dictate.service") != 0:
         return f"Wrote {unit}, but could not start it. Try: systemctl --user enable --now hold-dictate"
     return "Will start at every login, and is running now."
 
@@ -94,6 +116,7 @@ def uninstall() -> str:
         return "Autostart removed and stopped."
     _sh("systemctl", "--user", "disable", "--now", "hold-dictate.service")
     _linux_unit().unlink(missing_ok=True)
+    _linux_desktop().unlink(missing_ok=True)
     _sh("systemctl", "--user", "daemon-reload")
     return "Autostart removed and stopped."
 
