@@ -161,6 +161,7 @@ code.cmd-inline { white-space:nowrap; }
 .btn.icon svg { width:12px; height:12px; }
 .last { padding:var(--s-3) var(--s-4); border:1px solid var(--line-2); border-radius:var(--r-md); background:var(--surface); white-space:pre-wrap; overflow-wrap:anywhere; max-height:160px; overflow:auto; unicode-bidi:plaintext; }
 .last.empty { color:var(--muted); }
+.note bdi, .hint bdi { white-space:nowrap; }
 .ex { display:grid; gap:2px; margin-top:var(--s-1); }
 .chips { display:flex; flex-wrap:wrap; gap:var(--s-2); }
 .chip { font:inherit; font-size:var(--t-sm); font-weight:500; height:34px; padding:0 var(--s-4); border-radius:var(--r-pill); cursor:pointer;
@@ -288,7 +289,7 @@ details .items { margin-top:var(--s-6); }
   <div class="items">
     <div class="item">
       <span class="label" id="l-mode">Shortcut</span>
-      <div><div class="seg" id="hotkey_mode" role="group" aria-labelledby="l-mode"><button data-v="hold">Hold to talk</button><button data-v="auto">Tap or hold</button><button data-v="toggle">Tap to start and stop</button></div></div>
+      <div><div class="seg" id="hotkey_mode" role="group" aria-labelledby="l-mode"><button data-v="hold">Hold to talk</button><button data-v="auto">Tap or hold</button><button data-v="toggle">Tap on/off</button></div></div>
       <p class="hint" id="modeHint"></p>
     </div>
     <div class="row" id="silenceRow"><label class="text" for="silence_stop"><b>Stop after silence</b><span class="hint" id="silenceHint"></span></label><input type="number" id="silence_stop" min="0" max="60" step="0.5"></div>
@@ -527,7 +528,8 @@ function render(s) {
   renderUpdates(s);
   $('local_fallback').checked = c.local_fallback;
   for (const id of ['prompt', 'base_url', 'model', 'post_hook']) if (document.activeElement !== $(id)) $(id).value = c[id];
-  if (document.activeElement !== $('filler_words')) $('filler_words').value = c.filler_words || s.fillers_default.join(', '); // the built-in list, to edit // don't move the cursor while typing
+  if (document.activeElement !== $('filler_words')) $('filler_words').value = c.filler_words || s.fillers_default.join(', '); // the built-in list, to edit
+  fitFillers(); // don't move the cursor while typing
   for (const id of ['min_hold', 'timeout', 'silence_stop']) $(id).value = c[id];
   renderMode(s); renderText(s); renderPasting(s); // these save on change, so show what was kept (out-of-range values are clamped)
   $('cfgPath').textContent = s.config_path;
@@ -699,6 +701,7 @@ function renderText(s) {
   const c = s.config;
   for (const id of ['drop_hallucinations', 'remove_fillers', 'spoken_punctuation', 'auto_submit']) $(id).checked = c[id];
   $('fillerRow').hidden = !c.remove_fillers;
+  requestAnimationFrame(fitFillers);
   $('spokenWarn').hidden = !c.spoken_punctuation;
   renderPairs('word_overrides', c.word_overrides);
 }
@@ -716,7 +719,7 @@ function renderPasting(s) {
   $('rulesBox').inert = !s.focus_detect;
   $('submitHint').textContent = 'In chat apps this sends the message at once.' + (s.focus_detect ? ' A rule below can turn it on or off for one app.' : '');
 }
-const RULES = { paste: 'Paste, no Enter', submit: 'Paste + Enter', shift: 'Ctrl+Shift+V paste', clipboard: 'Copy only', off: 'Do nothing' };
+const RULES = { paste: 'Paste, no Enter', submit: 'Paste + Enter', shift: (MAC ? 'Cmd' : 'Ctrl') + '+Shift+V paste', clipboard: 'Copy only', off: 'Do nothing' };
 const EDITORS = {
   word_overrides: { box: 'wordRows', key: 'Heard', value: () => Object.assign(document.createElement('input'), { type: 'text', dir: 'auto', placeholder: 'Written' }) },
   app_rules: { box: 'appRows', key: 'App name', value: () => { const sel = document.createElement('select'); for (const [v, label] of Object.entries(RULES)) sel.add(new Option(label, v)); return sel; } },
@@ -747,7 +750,7 @@ function pairsOf(field) {
 function duplicates(field) {
   const seen = new Set(), dups = [];
   for (const row of $(EDITORS[field].box).children) {
-    const k = row.querySelector('input'), name = field === 'app_rules' ? k.value.trim().toLowerCase() : k.value.trim();
+    const k = row.querySelector('input'), name = k.value.trim().toLowerCase(); // both are matched in any case
     const dup = !!name && seen.has(name); seen.add(name);
     k.classList.toggle('dup', dup); if (dup) dups.push(k.value.trim());
   }
@@ -765,6 +768,8 @@ function renderPairs(field, values) {
 }
 function addPair(field, k, v) { const row = pairRow(field, k, v); $(EDITORS[field].box).append(row); row.querySelector(k ? 'select, input:not(:first-child)' : 'input').focus(); return row; }
 for (const field of Object.keys(EDITORS)) { $(EDITORS[field].box).addEventListener('change', () => savePairs(field)); $(EDITORS[field].box).addEventListener('input', () => duplicates(field)); }
+function fitFillers() { const t = $('filler_words'); if (!t.offsetParent) return; t.style.height = 'auto'; t.style.height = t.scrollHeight + 2 + 'px'; }
+$('filler_words').addEventListener('input', fitFillers); addEventListener('resize', fitFillers);
 const words = v => v.split(',').map(w => w.trim()).filter(Boolean).join(', ');
 $('filler_words').addEventListener('input', () => saveSoon('filler_words', () => { const v = words($('filler_words').value); return v === S.fillers_default.join(', ') ? '' : v; }));
 $('resetFillers').onclick = () => { $('filler_words').value = S.fillers_default.join(', '); save({ filler_words: '' }); };
