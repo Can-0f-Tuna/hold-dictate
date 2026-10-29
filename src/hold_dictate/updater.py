@@ -17,6 +17,8 @@ REPO = "Can-0f-Tuna/hold-dictate"
 LATEST_URL = f"https://api.github.com/repos/{REPO}/releases/latest"
 CHECK_EVERY = 10 * 60
 FIRST_CHECK_AFTER = 60
+# What uv prints while it installs, and how far along each line means it is. Fetching the release comes first.
+STAGES = (("Resolved", 30), ("Building", 40), ("Downloading", 40), ("Built", 70), ("Downloaded", 70), ("Prepared", 85), ("Installed", 95))
 
 
 def parse_version(text: str) -> tuple:
@@ -79,6 +81,7 @@ class Updater:
         self.next_check = time.monotonic() + FIRST_CHECK_AFTER
         self.busy = threading.Lock()
         self.ready = False  # installed; restart when idle
+        self.progress = None  # 0-100 while installing, for the settings page
         self.on_failed = lambda: None  # the pill's update chip shows "!" and goes away
         self.announce = True  # notify after restarting; off when the pill shows it instead
 
@@ -128,16 +131,30 @@ class Updater:
                 self.status = f"{self.latest} will be installed on restart"
                 return True
             self.status = f"installing {self.latest}"
-            result = subprocess.run([uv, "tool", "install", "--force", spec], capture_output=True, text=True)
-            if result.returncode != 0:
-                self.status = f"update failed: {(result.stderr or result.stdout).strip()[-300:]}"
+            self.progress = 0
+            output = self._run_install([uv, "tool", "install", "--force", spec])
+            if output is not None:
+                self.progress = None
+                self.status = f"update failed: {output.strip()[-300:]}"
                 self.on_failed()
                 return False
+            self.progress = 100
             self.ready = True
             self.status = f"{self.latest} installed, restarting"
             return True
         finally:
             self.busy.release()
+
+    def _run_install(self, cmd) -> str | None:
+        """Runs uv, moving `progress` on as it reports each stage. None when it worked, else its output."""
+        proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+        lines = []
+        for line in proc.stdout:
+            lines.append(line)
+            for start, percent in STAGES:
+                if line.lstrip().startswith(start):
+                    self.progress = max(self.progress or 0, percent)
+        return None if proc.wait() == 0 else "".join(lines)
 
     def restart(self):
         """Replaces this process with the newly installed version."""

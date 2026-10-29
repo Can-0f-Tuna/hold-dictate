@@ -55,15 +55,15 @@ def test_state_hides_the_key(server):
 
 
 def test_save_applies_and_persists(server, tmp_path):
-    code, state = call(server, "/api/config", {"hotkey": "ctrl+alt+d", "sounds": False, "overlay_bg": "#112233", "api_key": ""})
+    code, state = call(server, "/api/config", {"hotkey": "ctrl+alt+d", "beeps": False, "overlay_bg": "#112233", "api_key": ""})
     assert code == 200 and state["config"]["hotkey"] == "ctrl+alt+d"
     assert server.cfg.api_key == "gsk_secret1234"  # empty key field keeps the saved key
-    assert server.saved and server.saved[-1].sounds is False
+    assert server.saved and server.saved[-1].beeps is False
     on_disk = config.load(tmp_path / "config.toml")
     assert on_disk.hotkey == "ctrl+alt+d" and on_disk.overlay_bg == "#112233"
 
 
-@pytest.mark.parametrize("bad", [{"hotkey": "space"}, {"overlay_bg": "red"}, {"provider": "x"}, {"sounds": "yes"}, {"nope": 1}, {"overlay_style": "stars"}, {"background_audio": "loud"}])
+@pytest.mark.parametrize("bad", [{"hotkey": "space"}, {"overlay_bg": "red"}, {"provider": "x"}, {"beeps": "yes"}, {"nope": 1}, {"overlay_style": "stars"}, {"background_audio": "loud"}])
 def test_save_rejects_bad_values(server, bad):
     code, body = call(server, "/api/config", bad)
     assert code == 400 and body["error"]
@@ -112,7 +112,7 @@ def test_update_command_installs_through_the_daemon(server, monkeypatch, capsys)
     from hold_dictate import cli
     asked = []
     server.updater = type("U", (), {
-        "latest": "v9.9.9", "status": "", "available": lambda self: True, "can_update": lambda self: "",
+        "latest": "v9.9.9", "status": "", "progress": None, "available": lambda self: True, "can_update": lambda self: "",
         "update_now": lambda self: asked.append("install"),
     })()
     assert cli.main(["update"]) == 0
@@ -184,3 +184,36 @@ def test_old_configs_keep_their_key(tmp_path):
     p.write_text('provider = "openai"\napi_key = "sk-old"\n')
     cfg = config.load(p)
     assert cfg.api_key_service == "openai" and cfg.effective_key() == "sk-old"
+
+
+def test_old_sounds_setting_migrates(tmp_path, monkeypatch):
+    p = tmp_path / "config.toml"
+    p.write_text("sounds = true\n")
+    monkeypatch.setattr(config.sys, "platform", "darwin")
+    assert config.load(p).beeps is True
+    monkeypatch.setattr(config.sys, "platform", "linux")
+    assert config.load(p).beeps is False  # it never played there, so turning it on now must not surprise anyone
+    p.write_text("sounds = true\nbeeps = true\n")
+    assert config.load(p).beeps is True
+
+
+def test_install_progress_follows_uv(monkeypatch):
+    u = updater.Updater(Config())
+    u.progress = 0
+    seen = []
+    class Proc:
+        stdout = iter(["Resolved 5 packages in 1s\n", "   Building hold-dictate @ git+https://x\n", "Prepared 5 packages\n", "Installed 5 packages\n"])
+        def wait(self):
+            return 0
+    def popen(*a, **k):
+        proc = Proc()
+        lines = proc.stdout
+        def tracked():
+            for line in lines:
+                yield line
+                seen.append(u.progress)
+        proc.stdout = tracked()
+        return proc
+    monkeypatch.setattr(updater.subprocess, "Popen", popen)
+    assert u._run_install(["uv"]) is None
+    assert seen == [30, 40, 85, 95]

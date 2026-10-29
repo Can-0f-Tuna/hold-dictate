@@ -149,7 +149,7 @@ class Config:
     hotkey: str = "alt+space"
     local_model: str = "small"  # faster-whisper model name or Hugging Face repo; "small" is Automatic
     local_fallback: bool = True  # use the local model when the cloud request fails (if installed)
-    sounds: bool = True  # short beeps on start, stop and error
+    beeps: bool = not sys.platform.startswith("linux")  # short sounds on start, stop and error; on Linux the pill already shows it
     background_audio: str = "lower"  # lower | mute | off: other apps' sound while you dictate
     min_hold: float = 0.3  # taps shorter than this (seconds) are ignored
     timeout: float = 15.0  # seconds before a cloud request is given up
@@ -192,6 +192,9 @@ def load(path: Path | None = None) -> Config:
                 setattr(cfg, key, value)
         if "languages" not in data:
             migrate_language(cfg, data)
+        if "sounds" in data and "beeps" not in data:
+            # Before 0.5.2 `sounds` never played on Linux while the pill was showing, so it starts off there.
+            cfg.beeps = bool(data["sounds"]) and not sys.platform.startswith("linux")
         if cfg.api_key and "api_key_service" not in data:
             cfg.api_key_service = cfg.provider  # before 0.5 the key always belonged to the saved provider
     return cfg

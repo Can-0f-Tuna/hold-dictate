@@ -70,20 +70,20 @@ def drive(cfg, hold_seconds):
 
 def test_full_dictation_flow(api):
     api.text = "dictated text"
-    cfg = Config(provider="custom", base_url=api.url, api_key="k", min_hold=0.1, sounds=False)
+    cfg = Config(provider="custom", base_url=api.url, api_key="k", min_hold=0.1, beeps=False)
     pasted, fb = drive(cfg, 0.3)
     assert pasted == ["dictated text"]
     assert fb.log == ["recording", "working", "done"]
 
 
 def test_short_tap_is_ignored(api):
-    cfg = Config(provider="custom", base_url=api.url, api_key="k", min_hold=0.5, sounds=False)
+    cfg = Config(provider="custom", base_url=api.url, api_key="k", min_hold=0.5, beeps=False)
     pasted, fb = drive(cfg, 0.05)
     assert pasted == [] and api.requests == []
 
 
 def test_api_failure_is_reported_not_pasted(api):
     api.status = 401
-    cfg = Config(provider="custom", base_url=api.url, api_key="bad", min_hold=0.1, sounds=False, local_fallback=False)
+    cfg = Config(provider="custom", base_url=api.url, api_key="bad", min_hold=0.1, beeps=False, local_fallback=False)
     pasted, fb = drive(cfg, 0.3)
     assert pasted == [] and any(isinstance(e, tuple) and e[0] == "error" for e in fb.log)

@@ -73,8 +73,7 @@ class Feedback:
             self.events.write(line + "\n")
 
     def _beep(self, name):
-        # The overlay already signals state on Linux with quickshell; other systems get a beep.
-        if (self.cfg and not self.cfg.sounds) or self.events:
+        if not (self.cfg and self.cfg.beeps):
             return
         def play():
             try:

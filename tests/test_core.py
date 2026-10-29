@@ -6,7 +6,7 @@ from hold_dictate.providers import TranscribeError, check_api, transcribe_api
 
 
 def test_config_roundtrip(tmp_path):
-    cfg = config.Config(provider="openai", api_key='k"ey', prompt="שלום\nworld", min_hold=0.5, sounds=False)
+    cfg = config.Config(provider="openai", api_key='k"ey', prompt="שלום\nworld", min_hold=0.5, beeps=False)
     path = config.save(cfg, tmp_path / "c.toml")
     assert config.load(path) == cfg
 

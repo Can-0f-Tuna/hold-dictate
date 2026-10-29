@@ -137,6 +137,7 @@ class SettingsServer:
                 "latest": updater.latest if updater else "",
                 "available": bool(updater and updater.available()),
                 "status": updater.status if updater else "",
+                "progress": updater.progress if updater else None,
                 "can_update": (updater.can_update() if updater else "not running") or "",
             },
             "config_path": str(cfgmod.config_path()),
