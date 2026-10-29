@@ -76,6 +76,8 @@ code { font:500 .9em var(--mono); background:var(--soft); border:1px solid var(-
 .keys.rec .ghost { color:var(--muted); font-weight:400; font-size:.6em; }
 .setup h1 { margin:0; font-size:clamp(30px, 4.6vw, 48px); font-weight:600; letter-spacing:-.02em; line-height:1.1; }
 .setup .slot { margin-top:var(--s-6); max-width:560px; }
+.setup .slot:empty { display:none; }
+.setup .slot .cmd { display:block; padding:var(--s-3) var(--s-4); font-size:var(--t-sm); border-radius:var(--r-md); user-select:all; }
 .lede { margin-top:var(--s-4); font-size:var(--t-md); color:var(--muted); max-width:56ch; }
 .hero .acts { display:flex; flex-wrap:wrap; align-items:center; gap:var(--s-3); margin-top:var(--s-5); }
 
@@ -178,6 +180,7 @@ details .items { margin-top:var(--s-6); }
   .row { align-items:flex-start; }
   .brand .sub { display:none; }
   .wave { height:64px; margin-top:var(--s-6); }
+  .cap { border-radius:var(--r-md); }
 }
 @media (prefers-reduced-motion: reduce) { * { transition:none !important; } }
 </style>
@@ -195,7 +198,6 @@ details .items { margin-top:var(--s-6); }
 </header>
 
 <div class="banner err" id="stale" hidden><span>hold-dictate restarted, so this page is out of date.</span><button class="btn small primary" id="reload">Reload</button></div>
-<div class="banner" id="notRunning" hidden><span>hold-dictate is not running, so the shortcut does nothing yet.</span><button class="btn small primary" id="startSvc">Start it</button></div>
 </div>
 
 <section class="hero" aria-label="Status">
@@ -209,10 +211,12 @@ details .items { margin-top:var(--s-6); }
     </div>
   </div>
   <div class="setup" id="setupView" hidden>
-    <h1>Paste an API key to start dictating.</h1>
+    <h1 id="setupTitle"></h1>
     <p class="lede" id="setupLede"></p>
     <div class="slot" id="keySlot"></div>
+    <p class="note" id="svcMsg"></p>
   </div>
+  <button class="btn primary" id="startSvc" hidden>Start hold-dictate</button>
   <canvas class="wave" id="wave" aria-hidden="true"></canvas>
 </section>
 
@@ -248,7 +252,7 @@ details .items { margin-top:var(--s-6); }
 </section>
 
 <section class="group" aria-labelledby="h-lang">
-  <header><h2 id="h-lang">Languages</h2><p>Pick every language you speak. The transcriber listens for these and nothing else.</p></header>
+  <header><h2 id="h-lang">Languages</h2><p>Pick every language you speak, and the transcriber listens for those.</p></header>
   <div class="items">
     <p class="picked" id="picked"></p>
     <div class="chips" id="chips" role="group" aria-label="Languages"></div>
@@ -328,13 +332,13 @@ let S = /*STATE*/null; // the last state from the server, filled in when the pag
 class Stale extends Error {}
 async function api(path, body) {
   const res = await fetch(path, { method: body === undefined ? 'GET' : 'POST', headers: { 'X-Token': TOKEN, 'Content-Type': 'application/json' }, body: body === undefined ? undefined : JSON.stringify(body) });
-  if (res.status === 403) { $('stale').hidden = false; throw new Stale('hold-dictate restarted. Reload the page.'); }
+  if (res.status === 403) { $('stale').hidden = false; throw new Stale('reload the page'); }
   const data = await res.json().catch(() => ({ error: res.statusText }));
   if (!res.ok) throw new Error(data.error || res.statusText);
   return data;
 }
 $('reload').onclick = () => location.reload();
-const keyHome = { parent: $('keyRows').parentNode, next: $('keyRows').nextElementSibling };
+const homes = Object.fromEntries(['keyRows', 'customRows', 'startSvc'].map(id => [id, { parent: $(id).parentNode, next: $(id).nextElementSibling }]));
 
 // ---- the save indicator: every change saves at once ----
 let saveTimer;
@@ -350,7 +354,7 @@ function saveState(kind, text) {
 async function save(changes) {
   saveState('saving');
   try { S = await api('/api/config', changes); render(S); saveState('saved'); return true; }
-  catch (e) { saveState('failed', `Not saved: ${e.message}`); if (S) render(S); return false; }
+  catch (e) { saveState('failed', e instanceof Stale ? 'Not saved' : `Not saved: ${e.message}`); if (S) render(S); return false; }
 }
 const debounced = {};
 function saveSoon(id, value) { clearTimeout(debounced[id]); debounced[id] = setTimeout(() => save({ [id]: value() }), 700); }
@@ -369,27 +373,37 @@ function keycaps(parts, tail) {
   else el.append(word('and talk.'));
 }
 
+// What stops dictation from working, most basic first. null when it is ready.
+function blocker(s) {
+  const c = s.config, service = ((s.providers[c.provider] || {}).label || '').replace(/ \(.*/, '');
+  if (!s.running) return { status: 'Not running', title: 'hold-dictate isn\'t running.', lede: 'Start it, and it also starts every time you log in.', act: 'start' };
+  if (s.problem) return { status: 'The shortcut can\'t work yet', title: 'The shortcut can\'t work yet.', lede: s.problem };
+  if (c.provider === 'local') return s.local_installed ? null : { status: 'Not set up yet', title: 'Install the offline model to start.', lede: 'It runs on this computer without internet. Run this in a terminal, then reload this page:', code: 'uv tool install --force "hold-dictate[local]"' };
+  if (c.provider === 'custom' && !c.base_url) return { status: 'Not set up yet', title: 'Add your server\'s address to start.', lede: 'A custom service needs the address of any server that speaks the OpenAI transcription API.', move: 'customRows' };
+  if (!s.key_hint && !s.key_from_env) return { status: 'Not set up yet', title: 'Paste an API key to start dictating.', lede: `hold-dictate sends what you say to a speech service, which turns it into text. You're set up for ${service}${c.provider === 'groq' ? ', which is free' : ''}. You can pick another service below.`, move: 'keyRows' };
+  return null;
+}
+
 function status(s) {
-  const c = s.config, el = $('status');
-  let text = 'Ready', warn = false;
-  if (!s.running) { text = 'Not running'; warn = true; }
-  else if (s.problem) { text = s.problem; warn = true; }
-  else if (c.provider !== 'local' && !s.key_hint && !s.key_from_env) { warn = true; }
-  else if (c.provider === 'local' && !s.local_installed) { text = 'The offline model is not installed yet'; warn = true; }
-  const setup = s.running && !s.problem && c.provider !== 'local' && !s.key_hint && !s.key_from_env;
-  el.classList.toggle('warn', warn);
-  $('statusText').textContent = setup ? 'Not set up yet' : text;
-  // With no key the key field is the whole point of the page, so it moves up into the hero.
-  $('readyView').hidden = setup; $('setupView').hidden = !setup;
-  if (setup && $('keyRows').parentNode !== $('keySlot')) $('keySlot').append($('keyRows'));
-  if (!setup && $('keyRows').parentNode === $('keySlot')) keyHome.parent.insertBefore($('keyRows'), keyHome.next);
-  const label = (s.providers[c.provider] || {}).label || 'the service';
-  $('setupLede').textContent = `hold-dictate sends what you say to a speech service, which turns it into text. You're set up for ${label.replace(/ \(.*/, '')}${c.provider === 'groq' ? ', which is free' : ''}. You can pick another service below.`;
+  const b = blocker(s);
+  $('status').classList.toggle('warn', !!b);
+  $('statusText').textContent = b ? b.status : 'Ready';
+  // When dictation can't work, the hero becomes the fix, and the shortcut waits until it is true.
+  $('readyView').hidden = !!b; $('setupView').hidden = !b; $('startSvc').hidden = true;
+  for (const [id, home] of Object.entries(homes)) if ($(id).parentNode !== home.parent && (!b || b.move !== id)) home.parent.insertBefore($(id), home.next);
+  const slot = $('keySlot');
+  [...slot.children].forEach(el => { if (!(el.id in homes)) el.remove(); });
+  if (!b) return;
+  $('setupTitle').textContent = b.title;
+  $('setupLede').textContent = b.lede;
+  if (b.move && $(b.move).parentNode !== slot) slot.append($(b.move));
+  if (b.code) slot.append(Object.assign(document.createElement('code'), { className: 'cmd', textContent: b.code }));
+  $('startSvc').hidden = b.act !== 'start';
+  if (b.act === 'start') slot.append($('startSvc'));
 }
 
 function render(s) {
   const c = s.config;
-  $('notRunning').hidden = s.running;
   status(s);
   if (!recording) keycaps(c.hotkey.split('+'));
   renderService(s);
@@ -428,6 +442,7 @@ function renderService(s) {
   $('localHelp').hidden = !local;
   $('localHelp').innerHTML = '';
   $('localHelp').append(s.local_installed ? 'Runs on this computer without internet. The first use downloads the model.' : 'The offline model needs one more install. In a terminal, run ', ...(s.local_installed ? [] : [Object.assign(document.createElement('code'), { textContent: 'uv tool install --force "hold-dictate[local]"' })]));
+  $('saveKey').classList.toggle('primary', !s.key_hint && !s.key_from_env);
   $('key').placeholder = s.key_hint ? `Saved key ${s.key_hint}` : s.key_from_env ? 'A key is set in an environment variable.' : 'Paste your key here';
   const help = $('keyHelp'); help.textContent = '';
   if (p && p.keys_url) {
@@ -490,7 +505,7 @@ function renderLanguages(s) {
   const chosen = s.config.languages, names = Object.fromEntries(s.languages);
   const list = chosen.map(c => names[c] || c);
   const picked = $('picked'); picked.innerHTML = '';
-  if (!list.length) picked.append('Any language. It is detected each time, so pick yours below for better results.');
+  if (!list.length) picked.append('None picked, so any language is detected. Picking yours gives better results.');
   else {
     picked.append('Listening for ');
     list.forEach((n, i) => { if (i) picked.append(i === list.length - 1 ? ' and ' : ', '); picked.append(Object.assign(document.createElement('b'), { textContent: n })); });
@@ -509,7 +524,7 @@ function renderLanguages(s) {
   more.add(new Option('More languages…', ''));
   for (const [code, name] of [...s.languages].sort((a, b) => a[1].localeCompare(b[1]))) if (!POPULAR.includes(code) && !chosen.includes(code)) more.add(new Option(name, code));
 }
-$('moreLang').addEventListener('change', () => { const v = $('moreLang').value; if (v) save({ languages: [...S.config.languages, v] }); });
+$('moreLang').addEventListener('change', async () => { const v = $('moreLang').value; if (v) { await save({ languages: [...S.config.languages, v] }); $('moreLang').focus(); } });
 
 // ---- simple fields ----
 for (const id of ['base_url', 'model', 'prompt']) {
@@ -583,7 +598,7 @@ $('installUpd').onclick = async () => {
 };
 $('startSvc').onclick = async () => {
   $('startSvc').disabled = true;
-  try { const r = await api('/api/service', {}); $('notRunning').firstChild.textContent = r.message; } catch (e) { $('notRunning').firstChild.textContent = e.message; }
+  try { const r = await api('/api/service', {}); $('svcMsg').className = 'note'; $('svcMsg').textContent = r.message; } catch (e) { $('svcMsg').className = 'note bad'; $('svcMsg').textContent = e.message; }
   finally { $('startSvc').disabled = false; }
 };
 
