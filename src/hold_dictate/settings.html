@@ -716,7 +716,7 @@ function renderPasting(s) {
   $('rulesBox').inert = !s.focus_detect;
   $('submitHint').textContent = 'In chat apps this sends the message at once.' + (s.focus_detect ? ' A rule below can turn it on or off for one app.' : '');
 }
-const RULES = { paste: 'Paste, no Enter', submit: 'Paste and press Enter', shift: 'Paste with Ctrl+Shift+V', clipboard: 'Copy only', off: 'Do nothing' };
+const RULES = { paste: 'Paste, no Enter', submit: 'Paste + Enter', shift: 'Ctrl+Shift+V paste', clipboard: 'Copy only', off: 'Do nothing' };
 const EDITORS = {
   word_overrides: { box: 'wordRows', key: 'Heard', value: () => Object.assign(document.createElement('input'), { type: 'text', dir: 'auto', placeholder: 'Written' }) },
   app_rules: { box: 'appRows', key: 'App name', value: () => { const sel = document.createElement('select'); for (const [v, label] of Object.entries(RULES)) sel.add(new Option(label, v)); return sel; } },
