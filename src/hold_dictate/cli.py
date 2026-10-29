@@ -114,6 +114,9 @@ def cmd_doctor(_args) -> int:
     except Exception as e:
         hint = "Linux: install libportaudio2 (apt) / portaudio (dnf, pacman)." if sys.platform.startswith("linux") else ""
         line(False, f"audio: {e}", hint)
+    if cfg.background_audio != "off":
+        from . import ducking
+        line(ducking.available(), "turning other apps down while you dictate", "Linux: install pactl (pulseaudio-utils), or set background_audio = \"off\".")
     tools = missing_tools()
     line(not tools, "paste helpers installed", f"Install: {', '.join(tools)}")
     if cfg.provider == "local":

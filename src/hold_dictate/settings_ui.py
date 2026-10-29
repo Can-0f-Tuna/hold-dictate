@@ -14,8 +14,8 @@ from dataclasses import asdict, fields
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
-from . import __version__, config as cfgmod
-from .config import HEBREW_PROMPT, LOCAL_MODELS, OVERLAY_STYLES, PROVIDERS, Config
+from . import __version__, config as cfgmod, ducking
+from .config import DUCK_MODES, HEBREW_PROMPT, LOCAL_MODELS, OVERLAY_STYLES, PROVIDERS, Config
 
 PAGE = Path(__file__).with_name("settings.html")
 PORT = 47811
@@ -116,6 +116,7 @@ class SettingsServer:
             "local_models": LOCAL_MODELS,
             "local_installed": importlib.util.find_spec("faster_whisper") is not None,
             "overlay": sys.platform.startswith("linux"),
+            "ducking": ducking.available(),
             "update": {
                 "latest": updater.latest if updater else "",
                 "available": bool(updater and updater.available()),
@@ -144,6 +145,8 @@ class SettingsServer:
         parse_hotkey(new.hotkey)
         if new.overlay_position not in ("bottom", "top"):
             raise ValueError("position must be bottom or top")
+        if new.background_audio not in DUCK_MODES:
+            raise ValueError("background audio must be " + ", ".join(DUCK_MODES))
         if new.overlay_style not in OVERLAY_STYLES:
             raise ValueError("style must be " + " or ".join(OVERLAY_STYLES))
         if not new.local_model:

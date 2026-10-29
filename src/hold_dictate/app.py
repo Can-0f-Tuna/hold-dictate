@@ -1,9 +1,11 @@
 """The dictation loop: hotkey down -> record, hotkey up -> transcribe -> paste."""
+import signal
 import sys
 import threading
 import time
 
 from . import audio
+from .ducking import Ducker
 from .config import Config
 from .feedback import Feedback
 from .hotkey import HoldDetector, choose_backend, parse_hotkey
@@ -25,8 +27,9 @@ def transcribe(cfg: Config, local: LocalTranscriber, speech) -> tuple[str, str]:
 
 
 class Dictation:
-    def __init__(self, cfg: Config, feedback: Feedback, recorder_factory=None, paster=None, on_no_key=None):
+    def __init__(self, cfg: Config, feedback: Feedback, recorder_factory=None, paster=None, on_no_key=None, ducker=None):
         self.cfg = cfg
+        self.ducker = ducker or Ducker(cfg)
         self.on_no_key = on_no_key
         self.fb = feedback
         self.local = LocalTranscriber(cfg)
@@ -52,9 +55,11 @@ class Dictation:
                 self.fb.error(str(e))
                 return
             self.fb.recording()
+            self.ducker.duck()
             self.pressed_at = self.last_used = time.monotonic()
         elif action == "stop" and self.recorder is not None:
             recording, self.recorder = self.recorder.stop(), None
+            self.ducker.restore()
             if time.monotonic() - self.pressed_at < self.cfg.min_hold:
                 self.fb.done()
                 return
@@ -141,6 +146,7 @@ def run(cfg: Config) -> int:
             done.set()
 
     done = threading.Event()
+    signal.signal(signal.SIGTERM, lambda *_: done.set())  # a clean exit, so other apps get their volume back
     threading.Thread(target=listen, daemon=True).start()
     if backend:
         print(f"hold-dictate: hold {hotkey} to dictate ({cfg.provider}, keyboard via {backend.name})", flush=True)

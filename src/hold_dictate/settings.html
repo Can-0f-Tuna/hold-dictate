@@ -122,6 +122,10 @@ details[open] summary { margin-bottom:14px; }
       <p class="msg" id="hotkeyMsg"></p>
     </div>
     <label class="switch"><span data-t="sounds"></span><input type="checkbox" id="sounds"></label>
+    <div class="f"><span data-t="bgAudio"></span>
+      <div class="seg" id="background_audio"><button data-v="lower" data-t="bgLower"></button><button data-v="mute" data-t="bgMute"></button><button data-v="off" data-t="bgOff"></button></div>
+      <p class="hint" id="bgHint"></p>
+    </div>
   </div>
 </section>
 
@@ -196,6 +200,9 @@ const T = {
     speaking: 'Speaking', language: 'Language', auto: 'Detect automatically', he: 'Hebrew (with English words)',
     hotkey: 'Hold-to-talk hotkey', change: 'Change', press: 'Press the keys…', hotkeyHint: 'Use a modifier (Alt, Ctrl, Shift, Win/Cmd) plus a letter, digit, Space or F-key. Esc cancels.',
     sounds: 'Play short sounds when recording starts and stops',
+    bgAudio: 'Music and videos while you dictate', bgLower: 'Turn down', bgMute: 'Silence', bgOff: 'Leave as is',
+    bgOn: 'Other apps get quieter while you hold the key, so the transcriber hears only you. Their volume comes back when you let go.',
+    bgNone: 'Needs pactl on Linux (from pulseaudio-utils). Install it to use this.',
     look: 'Recording pill', style: 'Style', dots: 'Dots', lines: 'Lines', barColor: 'Colour', bg: 'Background', bars: 'Custom', reset: 'Reset', position: 'Position', bottom: 'Bottom', top: 'Top', size: 'Size',
     lookHint: 'The pill shows on Linux (Wayland with quickshell). Windows and macOS use the sounds for now.',
     updates: 'Updates', autoUpdate: 'Install updates automatically', check: 'Check now', install: 'Update now',
@@ -222,6 +229,9 @@ const T = {
     speaking: 'דיבור', language: 'שפה', auto: 'זיהוי אוטומטי', he: 'עברית (עם מילים באנגלית)',
     hotkey: 'קיצור מקלדת (מחזיקים ומדברים)', change: 'שינוי', press: 'לחצו על המקשים…', hotkeyHint: 'מקש בקרה (Alt, Ctrl, Shift, Win/Cmd) ועוד אות, ספרה, רווח או F. ‏Esc מבטל.',
     sounds: 'צליל קצר בתחילת ההקלטה ובסופה',
+    bgAudio: 'מוזיקה וסרטונים בזמן ההכתבה', bgLower: 'להנמיך', bgMute: 'להשתיק', bgOff: 'לא לגעת',
+    bgOn: 'שאר האפליקציות נהיות שקטות כל עוד מחזיקים את המקש, כך שהתמלול שומע רק אתכם. הווליום חוזר כשמשחררים.',
+    bgNone: 'בלינוקס זה דורש את pactl (מהחבילה pulseaudio-utils). התקינו אותו כדי להשתמש בזה.',
     look: 'חלון ההקלטה', style: 'סגנון', dots: 'נקודות', lines: 'קווים', barColor: 'צבע', bg: 'רקע', bars: 'צבע משלכם', reset: 'איפוס', position: 'מיקום', bottom: 'למטה', top: 'למעלה', size: 'גודל',
     lookHint: 'החלון מוצג בלינוקס (Wayland עם quickshell). ב-Windows וב-macOS יש בינתיים צלילים.',
     updates: 'עדכונים', autoUpdate: 'להתקין עדכונים אוטומטית', check: 'בדיקה עכשיו', install: 'לעדכן עכשיו',
@@ -297,6 +307,8 @@ function render(s) {
   if (![...$('language').options].some(o => o.value === c.language)) { const o = new Option(c.language, c.language); $('language').add(o); $('language').value = c.language; }
   if (!recording) $('hotkey').textContent = pretty(c.hotkey);
   $('sounds').checked = c.sounds;
+  document.querySelectorAll('#background_audio button').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.v === c.background_audio)));
+  $('bgHint').textContent = !s.ducking && c.background_audio !== 'off' ? t('bgNone') : c.background_audio === 'off' ? '' : t('bgOn');
   renderModel(s);
   $('overlay_bg').value = c.overlay_bg; $('overlay_bars').value = c.overlay_bars;
   document.querySelectorAll('#overlay_style button').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.v === c.overlay_style)));
@@ -459,6 +471,7 @@ $('overlay_size').addEventListener('input', () => { S.config.overlay_size = pars
 $('overlay_size').addEventListener('change', () => save({ overlay_size: parseFloat($('overlay_size').value) }));
 document.querySelectorAll('#overlay_position button').forEach(b => b.onclick = () => save({ overlay_position: b.dataset.v }));
 document.querySelectorAll('#overlay_style button').forEach(b => b.onclick = () => save({ overlay_style: b.dataset.v }));
+document.querySelectorAll('#background_audio button').forEach(b => b.onclick = () => save({ background_audio: b.dataset.v }));
 for (const [v, name] of [['#6b80ff', 'Blue'], ['#ffffff', 'White'], ['#4cc38a', 'Green'], ['#ffb020', 'Amber'], ['#ff6b8b', 'Pink'], ['#b18cff', 'Violet']]) {
   const b = document.createElement('button');
   b.type = 'button'; b.dataset.v = v; b.title = name; b.setAttribute('aria-label', name); b.style.background = v;

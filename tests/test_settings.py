@@ -63,7 +63,7 @@ def test_save_applies_and_persists(server, tmp_path):
     assert on_disk.hotkey == "ctrl+alt+d" and on_disk.overlay_bg == "#112233"
 
 
-@pytest.mark.parametrize("bad", [{"hotkey": "space"}, {"overlay_bg": "red"}, {"provider": "x"}, {"sounds": "yes"}, {"nope": 1}, {"overlay_style": "stars"}])
+@pytest.mark.parametrize("bad", [{"hotkey": "space"}, {"overlay_bg": "red"}, {"provider": "x"}, {"sounds": "yes"}, {"nope": 1}, {"overlay_style": "stars"}, {"background_audio": "loud"}])
 def test_save_rejects_bad_values(server, bad):
     code, body = call(server, "/api/config", bad)
     assert code == 400 and body["error"]

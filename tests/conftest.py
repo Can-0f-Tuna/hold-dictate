@@ -52,3 +52,9 @@ def isolated_config(tmp_path, monkeypatch):
     monkeypatch.setenv("HOLD_DICTATE_CONFIG_DIR", str(tmp_path / "cfg"))
     for name in ("GROQ_API_KEY", "OPENAI_API_KEY", "HOLD_DICTATE_API_KEY"):
         monkeypatch.delenv(name, raising=False)
+
+
+@pytest.fixture(autouse=True)
+def no_real_ducking(monkeypatch):
+    """Tests must never turn down the music on the machine running them."""
+    monkeypatch.setattr("hold_dictate.ducking.backend", lambda: None)

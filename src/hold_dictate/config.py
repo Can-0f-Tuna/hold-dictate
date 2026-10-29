@@ -58,6 +58,7 @@ LOCAL_MODELS = [
     ["tiny", "Fastest, least accurate (about 75 MB)"],
 ]
 
+DUCK_MODES = ("lower", "mute", "off")  # what happens to other apps' sound while you dictate
 OVERLAY_STYLES = ("dots", "lines")  # dots: the website's halftone bars; lines: the original thin bars
 
 
@@ -88,6 +89,7 @@ class Config:
     local_model: str = "small"  # faster-whisper model name or Hugging Face repo; "small" is Automatic
     local_fallback: bool = True  # use the local model when the cloud request fails (if installed)
     sounds: bool = True  # short beeps on start, stop and error
+    background_audio: str = "lower"  # lower | mute | off: other apps' sound while you dictate
     min_hold: float = 0.3  # taps shorter than this (seconds) are ignored
     timeout: float = 15.0  # seconds before a cloud request is given up
     idle_unload_seconds: float = 900.0  # free the local model after this long unused
