@@ -13,19 +13,19 @@
   color-scheme: light;
   --paper:#fcfcfb; --surface:#fff; --soft:#f2f2ef; --ink:#0c0c0d; --ink-2:#38383b; --muted:#6a6a6f;
   --line:#e7e7e3; --line-2:#d6d6d1; --track:#cfcfca; --accent:#2a46ff; --on-accent:#fff; --ok:#1f8a4c; --err:#c4202b;
-  --key:#fff; --key-edge:#d6d6d1; --key-shade:#c2c2bc; --seg-on:#fff;
+  --key:#fff; --key-edge:#d6d6d1; --key-shade:#c2c2bc; --key-glow:rgba(0,0,0,.35); --key-hi:rgba(255,255,255,0);
   --sans:"Geist",ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
   --mono:"Geist Mono",ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
   --t-xs:12px; --t-sm:13.5px; --t-base:15px; --t-md:17px;
   --s-1:4px; --s-2:8px; --s-3:12px; --s-4:16px; --s-5:24px; --s-6:32px; --s-7:48px; --s-8:64px;
-  --r-sm:6px; --r-md:10px; --r-lg:14px; --r-pill:999px;
+  --r-xs:4px; --r-sm:6px; --r-md:10px; --r-lg:14px; --r-xl:20px; --r-pill:999px;
 }
 @media (prefers-color-scheme: dark) {
   :root {
     color-scheme: dark;
     --paper:#0a0a0b; --surface:#19191c; --soft:#1f1f22; --ink:#ededeb; --ink-2:#c9c9c5; --muted:#9b9ba0;
     --line:#27272b; --line-2:#3a3a3f; --track:#47474d; --accent:#6b80ff; --on-accent:#0a0a0b; --ok:#7fe0a0; --err:#ff6b6b;
-    --key:#26262a; --key-edge:#45454b; --key-shade:#0f0f11; --seg-on:#3a3a40;
+    --key:#2a2a2f; --key-edge:#4a4a51; --key-shade:#050506; --key-glow:#000; --key-hi:rgba(255,255,255,.08);
   }
 }
 * { box-sizing:border-box; }
@@ -37,38 +37,44 @@ code { font:500 .9em var(--mono); background:var(--soft); border:1px solid var(-
 :focus-visible { outline:2px solid var(--accent); outline-offset:2px; }
 [hidden] { display:none !important; }
 
-.wrap { max-width:840px; margin:0 auto; padding:0 var(--s-6); }
+.wrap { max-width:880px; margin:0 auto; padding:0 var(--s-6); }
 
 /* header */
+.bar { position:sticky; top:0; z-index:5; background:color-mix(in srgb, var(--paper) 88%, transparent); backdrop-filter:blur(10px); -webkit-backdrop-filter:blur(10px); }
 .top { display:flex; align-items:center; justify-content:space-between; gap:var(--s-4); height:64px; border-bottom:1px solid var(--line); }
 .brand { display:flex; align-items:center; gap:10px; font-weight:600; letter-spacing:-.01em; }
 .brand svg { width:22px; height:22px; display:block; }
 .brand .sub { color:var(--muted); font-weight:400; }
-.save { display:flex; align-items:center; gap:7px; font-size:var(--t-sm); color:var(--muted); white-space:nowrap; }
+.save { display:flex; align-items:center; gap:var(--s-2); font-size:var(--t-sm); color:var(--muted); white-space:nowrap; }
 .save svg { width:15px; height:15px; flex:none; }
 .save.saving { color:var(--ink-2); }
 .save.saved { color:var(--ok); }
 .save.failed { color:var(--err); white-space:normal; }
 
 /* banner for problems that block everything */
-.banner { display:flex; align-items:center; justify-content:space-between; gap:var(--s-4); margin-top:var(--s-5); padding:var(--s-3) var(--s-4); border:1px solid var(--line-2); border-radius:var(--r-md); background:var(--surface); font-size:var(--t-sm); }
+.banner { display:flex; align-items:center; justify-content:space-between; gap:var(--s-4); margin-top:var(--s-3); margin-bottom:var(--s-3); padding:var(--s-3) var(--s-4); border:1px solid var(--line-2); border-radius:var(--r-md); background:var(--surface); font-size:var(--t-sm); }
 .banner.err { border-color:color-mix(in srgb, var(--err) 45%, var(--line)); }
 
 /* the hotkey: the first thing on the page */
-.hero { padding:var(--s-8) 0 var(--s-7); border-bottom:1px solid var(--line); }
-.status { display:inline-flex; align-items:center; gap:8px; font-size:var(--t-sm); color:var(--muted); margin-bottom:var(--s-5); }
+.hero { position:relative; padding:var(--s-8) 0 var(--s-7); border-bottom:1px solid var(--line); }
+.hero > *:not(.wave) { position:relative; }
+.wave { position:absolute; inset:0 calc(-1 * var(--s-6)) 0 auto; width:min(48%, 440px); height:100%; pointer-events:none; -webkit-mask-image:linear-gradient(90deg, transparent, #000 35%); mask-image:linear-gradient(90deg, transparent, #000 35%); }
+.status { display:inline-flex; align-items:center; gap:var(--s-2); font-size:var(--t-sm); color:var(--muted); margin-bottom:var(--s-5); }
 .status i { margin-inline-start:4px; flex:none; width:8px; height:8px; border-radius:50%; background:var(--ok); box-shadow:0 0 0 4px color-mix(in srgb, var(--ok) 16%, transparent); }
 .status.warn i { background:var(--err); box-shadow:0 0 0 4px color-mix(in srgb, var(--err) 16%, transparent); }
 .status.warn { color:var(--ink); font-weight:500; }
 .status .link { font-weight:400; }
-.keys { display:flex; flex-wrap:wrap; align-items:center; gap:var(--s-3); font-size:clamp(28px, 4.4vw, 40px); font-weight:600; letter-spacing:-.02em; line-height:1.15; }
+.keys { display:flex; flex-wrap:wrap; align-items:center; gap:var(--s-3) var(--s-4); font-size:clamp(34px, 6vw, 68px); font-weight:600; letter-spacing:-.02em; line-height:1.15; }
 .keys .word { color:var(--ink); }
-.cap { display:inline-grid; place-items:center; min-width:1.75em; height:1.6em; padding:0 .45em; border-radius:12px; font:600 .6em var(--sans); letter-spacing:0;
-  background:var(--key); border:1px solid var(--key-edge); border-bottom-width:4px; border-bottom-color:var(--key-shade); color:var(--ink);
-  box-shadow:0 10px 24px -16px rgba(0,0,0,.35); }
-.plus { color:var(--muted); font-weight:400; font-size:.7em; }
+.cap { display:inline-grid; place-items:center; min-width:1.8em; height:1.55em; padding:0 .5em; border-radius:var(--r-lg); font:600 .58em var(--sans); letter-spacing:-.01em;
+  background:var(--key); border:1px solid var(--key-edge); border-bottom-width:5px; border-bottom-color:var(--key-shade); color:var(--ink);
+  box-shadow:inset 0 1px 0 var(--key-hi), 0 18px 30px -18px var(--key-glow); transition:transform .08s, border-bottom-width .08s, box-shadow .08s; }
+.cap.down { transform:translateY(3px); border-bottom-width:2px; box-shadow:inset 0 1px 0 var(--key-hi), 0 8px 16px -12px var(--key-glow); }
+.plus { color:var(--muted); font-weight:300; font-size:.6em; }
 .keys.rec .cap { border-color:var(--accent); border-bottom-color:var(--accent); }
 .keys.rec .ghost { color:var(--muted); font-weight:400; font-size:.6em; }
+.setup h1 { margin:0; font-size:clamp(30px, 4.6vw, 48px); font-weight:600; letter-spacing:-.02em; line-height:1.1; }
+.setup .slot { margin-top:var(--s-6); max-width:560px; }
 .lede { margin-top:var(--s-4); font-size:var(--t-md); color:var(--muted); max-width:56ch; }
 .hero .acts { display:flex; flex-wrap:wrap; align-items:center; gap:var(--s-3); margin-top:var(--s-5); }
 
@@ -113,24 +119,25 @@ input[type=number] { width:110px; }
 .link:hover { text-decoration-color:var(--ink); }
 
 /* segmented control */
-.seg { display:inline-flex; flex-wrap:wrap; gap:2px; padding:3px; border-radius:var(--r-md); background:var(--soft); border:1px solid var(--line); }
-.seg button { font:inherit; font-size:var(--t-sm); font-weight:500; height:32px; padding:0 var(--s-4); border-radius:7px; border:0; background:none; color:var(--muted); cursor:pointer; }
+.seg { display:inline-flex; flex-wrap:wrap; gap:2px; padding:3px; border-radius:var(--r-md); background:var(--soft); }
+.seg button { font:inherit; font-size:var(--t-sm); font-weight:500; height:32px; padding:0 var(--s-4); border-radius:var(--r-sm); border:0; background:none; color:var(--muted); cursor:pointer; }
 .seg button:hover { color:var(--ink); }
-.seg button[aria-pressed=true] { background:var(--seg-on); color:var(--ink); box-shadow:0 1px 2px rgba(0,0,0,.12), 0 0 0 1px var(--line-2); }
+.seg button[aria-pressed=true] { background:var(--ink); color:var(--paper); }
 
 /* switch: a clearly visible track in both modes */
 .switch { appearance:none; flex:none; width:44px; height:26px; margin:0; border-radius:var(--r-pill); background:var(--track); position:relative; cursor:pointer; transition:background .15s; }
 .switch::after { content:""; position:absolute; top:3px; left:3px; width:20px; height:20px; border-radius:50%; background:#fff; box-shadow:0 1px 3px rgba(0,0,0,.3); transition:transform .15s; }
-.switch:checked { background:var(--accent); }
+.switch:checked { background:var(--ink); }
+.switch:checked::after { background:var(--paper); }
 .switch:checked::after { transform:translateX(18px); }
 .switch:disabled { opacity:.45; cursor:default; }
 .switch:focus-visible { outline:2px solid var(--accent); outline-offset:2px; }
 
 /* language chips */
 .chips { display:flex; flex-wrap:wrap; gap:var(--s-2); }
-.chip { font:inherit; font-size:var(--t-sm); font-weight:500; height:34px; padding:0 14px; border-radius:var(--r-pill); cursor:pointer;
-  border:1px solid var(--line-2); background:var(--surface); color:var(--ink-2); display:inline-flex; align-items:center; gap:6px; }
-.chip:hover { border-color:var(--muted); color:var(--ink); }
+.chip { font:inherit; font-size:var(--t-sm); font-weight:500; height:34px; padding:0 var(--s-4); border-radius:var(--r-pill); cursor:pointer;
+  border:1px solid transparent; background:var(--soft); color:var(--ink-2); display:inline-flex; align-items:center; gap:var(--s-2); }
+.chip:hover { color:var(--ink); border-color:var(--line-2); }
 .chip[aria-pressed=true] { background:var(--ink); border-color:var(--ink); color:var(--paper); }
 .chip svg { width:12px; height:12px; }
 .picked { font-size:var(--t-base); }
@@ -143,22 +150,24 @@ input[type=number] { width:110px; }
 /* recording pill preview */
 .stage { position:relative; height:150px; border-radius:var(--r-lg); overflow:hidden; border:1px solid var(--line);
   background:radial-gradient(var(--line-2) 1px, transparent 1.2px) 0 0/12px 12px, var(--soft); }
-.pill { position:absolute; left:50%; display:grid; place-items:center; width:224px; height:56px; border-radius:28px; border:1px solid #2a2a2e; transform:translateX(-50%) scale(var(--s,1)); transition:top .2s, bottom .2s; box-shadow:0 14px 34px -14px rgba(0,0,0,.5); }
+.pill { position:absolute; left:50%; display:grid; place-items:center; width:224px; height:56px; border-radius:var(--r-pill); border:1px solid #2a2a2e; transform:translateX(-50%) scale(var(--s,1)); transition:top .2s, bottom .2s; box-shadow:0 14px 34px -14px rgba(0,0,0,.5); }
 .pill canvas { display:block; width:192px; height:40px; }
-.swatches { display:flex; flex-wrap:wrap; align-items:center; gap:10px; }
+.swatches { display:flex; flex-wrap:wrap; align-items:center; gap:var(--s-3); }
 .swatches button { width:26px; height:26px; border-radius:50%; border:1px solid rgba(0,0,0,.18); cursor:pointer; padding:0; }
 .swatches button[aria-pressed=true] { outline:2px solid var(--ink); outline-offset:3px; }
-.swatches label { display:inline-flex; align-items:center; gap:8px; font-size:var(--t-sm); color:var(--muted); margin-inline-start:6px; }
+.swatches label { display:inline-flex; align-items:center; gap:var(--s-2); font-size:var(--t-sm); color:var(--muted); margin-inline-start:var(--s-1); }
 input[type=color] { width:30px; height:30px; padding:2px; border:1px solid var(--line-2); border-radius:var(--r-sm); background:var(--surface); cursor:pointer; }
-input[type=range] { width:220px; accent-color:var(--accent); }
+input[type=range] { width:220px; accent-color:var(--ink); }
 
 /* advanced */
-details > summary { cursor:pointer; list-style:none; display:inline-flex; align-items:center; gap:8px; font-weight:500; }
+details > summary { cursor:pointer; list-style:none; display:inline-flex; align-items:center; gap:var(--s-2); font-weight:500; }
 details > summary::-webkit-details-marker { display:none; }
 details > summary svg { width:14px; height:14px; transition:transform .15s; color:var(--muted); }
 details[open] > summary svg { transform:rotate(90deg); }
 details .items { margin-top:var(--s-6); }
 
+.acts-end { display:flex; gap:var(--s-2); }
+.gap-top { margin-top:var(--s-3); }
 .foot { padding:var(--s-6) 0 var(--s-8); font-size:var(--t-sm); color:var(--muted); display:flex; flex-wrap:wrap; gap:var(--s-2) var(--s-5); justify-content:space-between; }
 
 @media (max-width:720px) {
@@ -167,6 +176,7 @@ details .items { margin-top:var(--s-6); }
   .hero { padding:var(--s-7) 0 var(--s-6); }
   .row { align-items:flex-start; }
   .brand .sub { display:none; }
+  .wave { display:none; }
 }
 @media (prefers-reduced-motion: reduce) { * { transition:none !important; } }
 </style>
@@ -174,6 +184,7 @@ details .items { margin-top:var(--s-6); }
 <body>
 <div class="wrap">
 
+<div class="bar">
 <header class="top">
   <div class="brand">
     <svg viewBox="0 0 32 32" aria-hidden="true"><rect x="1" y="1" width="30" height="30" rx="8" fill="#000"/><rect x="3.5" y="2.5" width="25" height="23" rx="6" fill="#232326"/><g fill="#fff"><rect x="8" y="12" width="2.6" height="4" rx="1.3"/><rect x="12.4" y="9" width="2.6" height="10" rx="1.3"/><rect x="16.8" y="6.5" width="2.6" height="15" rx="1.3" fill="#5b74ff"/><rect x="21.2" y="10.5" width="2.6" height="7" rx="1.3"/></g></svg>
@@ -184,14 +195,23 @@ details .items { margin-top:var(--s-6); }
 
 <div class="banner err" id="stale" hidden><span>hold-dictate restarted, so this page is out of date.</span><button class="btn small primary" id="reload">Reload</button></div>
 <div class="banner" id="notRunning" hidden><span>hold-dictate is not running, so the shortcut does nothing yet.</span><button class="btn small primary" id="startSvc">Start it</button></div>
+</div>
 
-<section class="hero" aria-labelledby="heroKeys">
-  <div class="status" id="status"><i></i><span id="statusText"></span><button class="link" id="statusAct" hidden></button></div>
-  <div class="keys" id="heroKeys"></div>
-  <p class="lede" id="lede">Hold the keys and speak. Let go, and the text is typed where your cursor is.</p>
-  <div class="acts">
-    <button class="btn" id="recKey">Change shortcut</button>
-    <span class="note" id="hotkeyMsg"></span>
+<section class="hero" aria-label="Status">
+  <canvas class="wave" id="wave" aria-hidden="true"></canvas>
+  <div class="status" id="status"><i></i><span id="statusText"></span></div>
+  <div id="readyView">
+    <div class="keys" id="heroKeys"></div>
+    <p class="lede">Hold the keys and speak. Let go, and the text is typed where your cursor is.</p>
+    <div class="acts">
+      <button class="btn" id="recKey">Change shortcut</button>
+      <span class="note" id="hotkeyMsg"></span>
+    </div>
+  </div>
+  <div class="setup" id="setupView" hidden>
+    <h1>Paste an API key to start dictating.</h1>
+    <p class="lede" id="setupLede"></p>
+    <div class="slot" id="keySlot"></div>
   </div>
 </section>
 
@@ -211,7 +231,7 @@ details .items { margin-top:var(--s-6); }
     <div class="item" id="customRows">
       <label class="label" for="base_url">Server address</label>
       <input type="text" id="base_url" class="mono" placeholder="https://host/v1" spellcheck="false">
-      <label class="label" for="model" style="margin-top:var(--s-3)">Model name</label>
+      <label class="label gap-top" for="model">Model name</label>
       <input type="text" id="model" class="mono" spellcheck="false">
     </div>
     <p class="hint" id="localHelp"></p>
@@ -254,10 +274,10 @@ details .items { margin-top:var(--s-6); }
     <div class="item"><span class="label" id="l-style">Style</span>
       <div><div class="seg" id="overlay_style" role="group" aria-labelledby="l-style"><button data-v="dots">Dots</button><button data-v="lines">Lines</button></div></div>
     </div>
-    <div class="item"><span class="label">Colour</span>
+    <div class="item"><span class="label">Color</span>
       <div class="swatches" id="swatches">
-        <label><input type="color" id="overlay_bars" aria-label="Custom dot colour">Custom</label>
-        <label><input type="color" id="overlay_bg" aria-label="Background colour">Background</label>
+        <label><input type="color" id="overlay_bars" aria-label="Custom dot color">Custom</label>
+        <label><input type="color" id="overlay_bg" aria-label="Background color">Background</label>
       </div>
     </div>
     <div class="item"><span class="label" id="l-pos">Position</span>
@@ -272,7 +292,7 @@ details .items { margin-top:var(--s-6); }
   <header><h2 id="h-upd">Updates</h2><p id="verLine"></p></header>
   <div class="items">
     <label class="row"><span class="text"><b>Install updates automatically</b><span class="hint">New versions install while you're not dictating.</span></span><input type="checkbox" class="switch" id="auto_update"></label>
-    <div class="row"><span class="note" id="updMsg"></span><span style="display:flex;gap:var(--s-2)"><button class="btn small primary" id="installUpd" hidden>Update now</button><button class="btn small" id="checkUpd">Check now</button></span></div>
+    <div class="row"><span class="note" id="updMsg"></span><span class="acts-end"><button class="btn small primary" id="installUpd" hidden>Update now</button><button class="btn small" id="checkUpd">Check now</button></span></div>
   </div>
 </section>
 
@@ -313,7 +333,7 @@ async function api(path, body) {
   return data;
 }
 $('reload').onclick = () => location.reload();
-$('statusAct').onclick = () => { $('key').scrollIntoView({ block: 'center', behavior: 'smooth' }); $('key').focus({ preventScroll: true }); };
+const keyHome = { parent: $('keyRows').parentNode, next: $('keyRows').nextElementSibling };
 
 // ---- the save indicator: every change saves at once ----
 let saveTimer;
@@ -353,13 +373,17 @@ function status(s) {
   let text = 'Ready', warn = false;
   if (!s.running) { text = 'Not running'; warn = true; }
   else if (s.problem) { text = s.problem; warn = true; }
-  else if (c.provider !== 'local' && !s.key_hint && !s.key_from_env) { text = 'Add an API key below to start'; warn = true; }
+  else if (c.provider !== 'local' && !s.key_hint && !s.key_from_env) { warn = true; }
   else if (c.provider === 'local' && !s.local_installed) { text = 'The offline model is not installed yet'; warn = true; }
-  const needKey = s.running && !s.problem && text.startsWith('Add an API key');
+  const setup = s.running && !s.problem && c.provider !== 'local' && !s.key_hint && !s.key_from_env;
   el.classList.toggle('warn', warn);
-  $('statusText').textContent = needKey ? 'No API key yet, so dictation can\'t start.' : text;
-  $('statusAct').hidden = !needKey;
-  $('statusAct').textContent = 'Add one';
+  $('statusText').textContent = setup ? 'Not set up yet' : text;
+  // With no key the key field is the whole point of the page, so it moves up into the hero.
+  $('readyView').hidden = setup; $('setupView').hidden = !setup;
+  if (setup && $('keyRows').parentNode !== $('keySlot')) $('keySlot').append($('keyRows'));
+  if (!setup && $('keyRows').parentNode === $('keySlot')) keyHome.parent.insertBefore($('keyRows'), keyHome.next);
+  const label = (s.providers[c.provider] || {}).label || 'the service';
+  $('setupLede').textContent = `hold-dictate sends what you say to a speech service, which turns it into text. You're set up for ${label.replace(/ \(.*/, '')}${c.provider === 'groq' ? ', which is free' : ''}. You can pick another service below.`;
 }
 
 function render(s) {
@@ -373,7 +397,7 @@ function render(s) {
   $('bgHint').textContent = !s.ducking ? 'This needs pactl (from the pulseaudio-utils package). Install it to use this.'
     : c.background_audio === 'off' ? 'Other apps keep playing as usual.'
     : s.platform === 'darwin' ? `Spotify and Music get ${c.background_audio === 'mute' ? 'silent' : 'quieter'} while you hold the keys, and come back when you let go. macOS can't change other apps' volume.`
-    : `Other apps get ${c.background_audio === 'mute' ? 'silent' : 'quieter'} while you hold the keys, and come back when you let go. Sound in headphones or Bluetooth is left alone, since the microphone can't hear it.`;
+    : `Other apps get ${c.background_audio === 'mute' ? 'silent' : 'quieter'} while you hold the keys, and come back when you let go. Headphones and Bluetooth stay as they are: the microphone can't hear them.`;
   $('sounds').checked = c.sounds;
   $('lookGroup').hidden = !s.overlay;
   $('overlay_bg').value = c.overlay_bg; $('overlay_bars').value = c.overlay_bars;
@@ -458,7 +482,7 @@ async function saveKey() {
 }
 $('saveKey').onclick = saveKey;
 $('key').addEventListener('keydown', e => { if (e.key === 'Enter') saveKey(); });
-$('key').addEventListener('input', () => { $('keyMsg').classList.remove('bad'); keyDirty(); });
+$('key').addEventListener('input', () => { $('keyMsg').className = 'note'; $('keyMsg').textContent = ''; keyDirty(); });
 
 // ---- languages: any number, kept in the order you picked them ----
 function renderLanguages(s) {
@@ -472,7 +496,7 @@ function renderLanguages(s) {
     picked.append('.');
   }
   const chips = $('chips'); chips.innerHTML = '';
-  for (const code of [...new Set([...POPULAR, ...chosen])]) {
+  for (const code of [...new Set([...chosen, ...POPULAR])]) {
     const on = chosen.includes(code), b = document.createElement('button');
     b.type = 'button'; b.className = 'chip'; b.setAttribute('aria-pressed', String(on));
     b.innerHTML = on ? ICON_X : ''; b.prepend(names[code] || code);
@@ -507,6 +531,19 @@ $('recKey').onclick = () => {
   recording = true; $('heroKeys').classList.add('rec'); keycaps([], 'press the new keys…'); $('recKey').textContent = 'Cancel';
   $('hotkeyMsg').className = 'note wait'; $('hotkeyMsg').textContent = 'A modifier (Alt, Ctrl, Shift, ' + (MAC ? 'Cmd' : 'Win') + ') plus a letter, digit, Space or F-key. Esc cancels.';
 };
+function pressKeys(e) {
+  if (recording || !S) return;
+  const held = { alt: e.altKey, ctrl: e.ctrlKey, shift: e.shiftKey, super: e.metaKey };
+  const parts = S.config.hotkey.split('+');
+  document.querySelectorAll('#heroKeys .cap').forEach((cap, i) => {
+    const part = parts[i];
+    const down = part in held ? held[part] : e.type === 'keydown' && (e.code === 'Space' ? 'space' : e.code.replace(/^Key|^Digit/, '').toLowerCase()) === part;
+    cap.classList.toggle('down', !!down);
+  });
+}
+window.addEventListener('keydown', pressKeys);
+window.addEventListener('keyup', pressKeys);
+window.addEventListener('blur', () => document.querySelectorAll('#heroKeys .cap').forEach(c => c.classList.remove('down')));
 window.addEventListener('keydown', e => {
   if (!recording) return;
   e.preventDefault();
@@ -621,6 +658,32 @@ for (const [v, name] of [['#6b80ff', 'Blue'], ['#ffffff', 'White'], ['#4cc38a', 
   $('swatches').insertBefore(b, $('swatches').querySelector('label'));
 }
 $('resetLook').onclick = () => save({ overlay_bg: '#0a0a0b', overlay_bars: '#6b80ff', overlay_position: 'bottom', overlay_size: 1, overlay_style: 'dots' });
+
+// ---- the hero's halftone waveform, the same dots as the recording pill ----
+const wave = $('wave'), wctx = wave.getContext('2d');
+function drawWave(now) {
+  const r = devicePixelRatio || 1, w = wave.clientWidth, h = wave.clientHeight;
+  if (!w) return;
+  if (wave.width !== Math.round(w * r)) { wave.width = Math.round(w * r); wave.height = Math.round(h * r); }
+  wctx.setTransform(r, 0, 0, r, 0, 0); wctx.clearRect(0, 0, w, h);
+  const css = getComputedStyle(document.documentElement), cell = 7, cols = Math.floor(w / cell), rows = Math.floor(h / cell), mid = rows / 2;
+  const tt = now / 1000, live = $('status').classList.contains('warn') ? 0.25 : 1;
+  for (let i = 0; i < cols; i++) {
+    const x = i / cols, env = Math.sin(Math.PI * x) * (0.55 + 0.45 * Math.sin(tt * 1.3 + i * 0.35) * Math.sin(tt * 0.7 + i * 0.11));
+    const amp = Math.max(0.06, env * live) * mid * 0.92;
+    for (let j = 0; j < rows; j++) {
+      const d = Math.abs(j + 0.5 - mid);
+      if (d > amp) continue;
+      const core = d < amp * 0.45;
+      wctx.fillStyle = core ? css.getPropertyValue('--accent') : css.getPropertyValue('--line-2');
+      const sz = core ? 3 : 2.4;
+      wctx.fillRect(i * cell + (cell - sz) / 2, j * cell + (cell - sz) / 2, sz, sz);
+    }
+  }
+}
+const still = matchMedia('(prefers-reduced-motion: reduce)').matches;
+(function loop(now) { drawWave(now || 0); if (!still) requestAnimationFrame(loop); })();
+addEventListener('resize', () => drawWave(performance.now()));
 
 // ---- start ----
 saveState('idle');
