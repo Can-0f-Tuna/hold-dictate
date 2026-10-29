@@ -15,11 +15,11 @@ RUNTIME = os.environ.get("XDG_RUNTIME_DIR") or "/tmp"
 EVENTS_FILE = os.path.join(RUNTIME, "hold-dictate.events")
 
 
-def _stop_stale_overlays():
+def _stop_stale_overlays(keep=None):
     """An update restarts the daemon in place, so the overlay the old version started is still running.
-    Any overlay of ours is stale at this point (versions before 0.4.3 kept no record of it)."""
+    Every overlay of ours but `keep` is stale (versions before 0.4.3 kept no record of theirs)."""
     for entry in Path("/proc").iterdir():
-        if not entry.name.isdigit() or int(entry.name) == os.getpid():
+        if not entry.name.isdigit() or int(entry.name) in (os.getpid(), keep):
             continue
         try:
             argv = (entry / "cmdline").read_bytes().split(b"\0")
@@ -46,8 +46,16 @@ class Feedback:
         self.events = None
         if sys.platform.startswith("linux") and os.environ.get("WAYLAND_DISPLAY") and shutil.which("quickshell"):
             self.events = open(EVENTS_FILE, "w", buffering=1)
-            _stop_stale_overlays()
+            updated = os.environ.pop("HOLD_DICTATE_UPDATED", "")
+            if not updated:
+                _stop_stale_overlays()
             self._ensure_overlay()
+            if updated and self.proc:
+                # The old overlay is still showing its "installing" chip: tell it to tick and leave.
+                # Older overlays do not know D, so whatever is left after the animation is stopped.
+                self._send("D")
+                keep = self.proc.pid
+                threading.Timer(5, lambda: _stop_stale_overlays(keep)).start()
 
     def _ensure_overlay(self):
         if self.proc and self.proc.poll() is None:
@@ -92,6 +100,9 @@ class Feedback:
     def working(self):
         self._send("T")
         self._beep("stop")
+
+    def update_failed(self):
+        self._send("F")
 
     def done(self):
         self._send("Q")

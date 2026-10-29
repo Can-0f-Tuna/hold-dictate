@@ -1,10 +1,12 @@
 // Dictation overlay: a small dark pill with a live voice visualiser, shown at the bottom centre
-// of the screen while hold-dictate is recording. Runs for the whole session so it appears instantly.
+// of the screen while hold-dictate is recording, plus the update tab and its corner chip. Runs for the whole session so it appears instantly.
 // Two looks: "dots", the website's halftone bars (each bar is three columns of dots, dense in the
 // middle and finer toward the tips), and "lines", the original thin rounded bars.
 // Driven by lines the daemon appends to $XDG_RUNTIME_DIR/hold-dictate.events:
 //   C <bg> <bars> <bottom|top> <scale> [dots|lines]   look, from the settings page (sent before each S)
 //   U <version|->  an update is waiting (sent before each S): a "!" tab on the pill installs it
+//   D              the update is installed (sent by the new version): the corner chip ticks and leaves
+//   F              the update failed: the corner chip shows "!" and leaves
 //   S              recording started: show
 //   L <level>      loudness of the last 20 ms, 0..1
 //   T              recording finished, transcribing
@@ -30,13 +32,18 @@ ShellRoot {
     readonly property int bars: lines ? lineBars : dotBars
     readonly property int rows: Math.floor(fieldH / cell)
     readonly property int half: Math.ceil(bars / 2)
+    readonly property real pillCY: atTop ? 48 + 40 * sizeScale : 40 * sizeScale   // pill centre, in the window
     property bool active: false
     property bool transcribing: false
     property real shown: 0.0
     property string updateVersion: ""
     property bool nudging: false     // the pill is gone; only the "!" tab is left, waiting for a click
-    property bool updating: false
-    readonly property bool tabWanted: updateVersion !== "" && (active || nudging)
+    // After a click the tab becomes a chip that peeks up from the corner of the screen while it installs:
+    // "" (no update running) | going | peek | done | failed
+    property string phase: ""
+    readonly property bool updating: phase !== ""
+    property bool doneWaiting: false   // D arrived while the chip was still on its way
+    readonly property bool tabWanted: updateVersion !== "" && (active || nudging) && !updating
     property real tabShown: 0.0
     property color pillColor: "#0a0a0b"
     property color barColor: "#6b80ff"
@@ -61,7 +68,10 @@ ShellRoot {
             level = parseFloat(parts[1]) || 0;
         } else if (parts[0] === "U") {
             updateVersion = parts[1] && parts[1] !== "-" ? parts[1] : "";
-            updating = false;
+        } else if (parts[0] === "D") {
+            root.finish(true);
+        } else if (parts[0] === "F") {
+            root.finish(false);
         } else if (parts[0] === "S") {
             nudging = false;
             transcribing = false;
@@ -110,15 +120,43 @@ ShellRoot {
         id: nudgeTimer
         interval: 7000
         onTriggered: {
-            if (tabMouse.containsMouse && !root.updating)
+            if (tabMouse.containsMouse)
                 restart();
             else
                 root.nudging = false;
-            if (root.updating) {
-                root.updateVersion = "";
-                interval = 7000;
-            }
         }
+    }
+
+    function startUpdate() {
+        if (updating)
+            return;
+        nudging = false;
+        doneWaiting = false;
+        chip.x = tab.x + tab.width - chip.width;
+        chip.y = pillCY - chip.height / 2;
+        chip.tick = 0;
+        phase = "going";
+        installUpdate.running = true;
+        giveUp.restart();
+        goAnim.restart();
+    }
+
+    function finish(ok) {
+        if (phase === "going" && ok) {
+            doneWaiting = true;
+            return;
+        }
+        if (phase !== "going" && phase !== "peek")
+            return;  // not ours: this overlay did not start an update
+        giveUp.stop();
+        phase = ok ? "done" : "failed";
+        doneAnim.restart();
+    }
+
+    Timer {
+        id: giveUp  // no word from the daemon: let the chip go rather than peek for ever
+        interval: 300000
+        onTriggered: root.finish(false)
     }
 
     Process {
@@ -126,6 +164,10 @@ ShellRoot {
         command: {
             const python = Quickshell.env("HOLD_DICTATE_PYTHON");
             return python ? [python, "-m", "hold_dictate", "update"] : ["hold-dictate", "update"];
+        }
+        onExited: code => {
+            if (code !== 0)
+                root.finish(false);  // cannot update here; the settings page opened instead
         }
     }
 
@@ -138,14 +180,15 @@ ShellRoot {
     }
 
     PanelWindow {
-        visible: root.active || root.shown > 0 || root.tabShown > 0
+        id: win
+        visible: root.active || root.shown > 0 || root.tabShown > 0 || root.updating
         color: "transparent"
+        // A strip along the whole edge of the screen, so the update chip can travel to the corner.
         anchors.bottom: !root.atTop
         anchors.top: root.atTop
-        margins.bottom: 48
-        margins.top: 48
-        implicitWidth: Math.ceil(440 * root.sizeScale)   // room for the "!" tab when it opens out
-        implicitHeight: Math.ceil(80 * root.sizeScale)
+        anchors.left: true
+        anchors.right: true
+        implicitHeight: Math.ceil(48 + 80 * root.sizeScale)
         exclusionMode: ExclusionMode.Ignore
         mask: root.tabShown > 0.5 && !root.updating ? tabInput : noInput   // clicks pass through everything else
         WlrLayershell.layer: WlrLayer.Overlay
@@ -156,9 +199,9 @@ ShellRoot {
             id: tab
             readonly property real s: root.sizeScale
             readonly property real tuck: 20 * s * root.shown   // shrinks as the pill fades, so the "!" never moves
-            readonly property bool open: tabMouse.containsMouse || root.updating
+            readonly property bool open: tabMouse.containsMouse
             x: parent.width / 2 + 112 * s - tuck
-            anchors.verticalCenter: parent.verticalCenter
+            y: root.pillCY - height / 2
             width: tuck + (open ? label.implicitWidth + 30 * s : 30 * s)
             height: 34 * s
             radius: height / 2
@@ -190,7 +233,7 @@ ShellRoot {
                 }
                 Text {
                     id: label
-                    text: root.updating ? "Updating…" : "Update"
+                    text: "Update"
                     color: "#e8e8ea"
                     font.pixelSize: 13 * tab.s
                     font.weight: Font.Medium
@@ -209,13 +252,161 @@ ShellRoot {
                 anchors.fill: parent
                 hoverEnabled: true
                 cursorShape: Qt.PointingHandCursor
-                onClicked: {
-                    if (root.updating)
-                        return;
-                    root.updating = true;
-                    installUpdate.running = true;
-                    nudgeTimer.interval = 2500;
-                    nudgeTimer.restart();
+                onClicked: root.startUpdate()
+            }
+        }
+
+        // The update chip: drops to the edge of the screen, slides into the corner and peeks out while
+        // the new version installs; ticks when it is done, then slips away.
+        Rectangle {
+            id: chip
+            readonly property real s: root.sizeScale
+            readonly property real edgeY: root.atTop ? 0 : win.height              // the screen edge
+            readonly property real out: root.atTop ? -1 : 1                         // away from the screen
+            readonly property real peekY: root.atTop ? -height * 0.4 : edgeY - height * 0.6
+            readonly property real upY: root.atTop ? 18 * s : edgeY - height - 18 * s
+            readonly property real awayY: root.atTop ? -height - 8 : edgeY + 8
+            readonly property real cornerX: win.width - width - 28 * s
+            property real tick: 0          // 0..1, how much of the check mark is drawn
+            width: 40 * s
+            height: 40 * s
+            radius: 12 * s
+            color: root.pillColor
+            border.width: 1
+            border.color: "#2a2a2e"
+            visible: root.updating
+
+            Item {
+                // the icon sits in the part that shows while peeking
+                width: parent.width
+                height: parent.height
+                y: root.phase === "peek" || root.phase === "going" ? parent.height * (root.atTop ? 0.14 : -0.14) : 0
+                Behavior on y {
+                    NumberAnimation {
+                        duration: 200
+                    }
+                }
+
+                Canvas {
+                    id: spinner
+                    anchors.centerIn: parent
+                    width: 18 * chip.s
+                    height: width
+                    visible: root.phase === "going" || root.phase === "peek"
+                    onPaint: {
+                        const ctx = getContext("2d");
+                        ctx.reset();
+                        ctx.lineWidth = 2.2 * chip.s;
+                        ctx.lineCap = "round";
+                        ctx.strokeStyle = root.barColor;
+                        ctx.beginPath();
+                        ctx.arc(width / 2, height / 2, width / 2 - ctx.lineWidth, 0, Math.PI * 1.4);
+                        ctx.stroke();
+                    }
+                    RotationAnimator on rotation {
+                        from: 0
+                        to: 360
+                        duration: 900
+                        loops: Animation.Infinite
+                        running: spinner.visible
+                    }
+                }
+
+                Canvas {
+                    id: check
+                    anchors.centerIn: parent
+                    width: 20 * chip.s
+                    height: width
+                    visible: root.phase === "done"
+                    property real progress: chip.tick
+                    onProgressChanged: requestPaint()
+                    onPaint: {
+                        const ctx = getContext("2d"), w = width, h = height;
+                        ctx.reset();
+                        ctx.lineWidth = 2.6 * chip.s;
+                        ctx.lineCap = "round";
+                        ctx.lineJoin = "round";
+                        ctx.strokeStyle = root.barColor;
+                        // two strokes, short then long, drawn in order as progress runs 0..1
+                        const a = [w * 0.12, h * 0.55], b = [w * 0.4, h * 0.82], c = [w * 0.9, h * 0.2];
+                        const first = Math.min(1, progress / 0.35), second = Math.max(0, (progress - 0.35) / 0.65);
+                        ctx.beginPath();
+                        ctx.moveTo(a[0], a[1]);
+                        ctx.lineTo(a[0] + (b[0] - a[0]) * first, a[1] + (b[1] - a[1]) * first);
+                        if (second > 0)
+                            ctx.lineTo(b[0] + (c[0] - b[0]) * second, b[1] + (c[1] - b[1]) * second);
+                        ctx.stroke();
+                    }
+                }
+
+                Text {
+                    anchors.centerIn: parent
+                    visible: root.phase === "failed"
+                    text: "!"
+                    color: "#ff6b6b"
+                    font.pixelSize: 19 * chip.s
+                    font.weight: Font.Black
+                }
+            }
+        }
+
+        SequentialAnimation {
+            id: goAnim
+            NumberAnimation {
+                target: chip
+                property: "y"
+                to: chip.peekY
+                duration: 340
+                easing.type: Easing.InOutCubic
+            }
+            NumberAnimation {
+                target: chip
+                property: "x"
+                to: chip.cornerX
+                duration: 560
+                easing.type: Easing.InOutCubic
+            }
+            ScriptAction {
+                script: {
+                    root.phase = "peek";
+                    if (root.doneWaiting)
+                        root.finish(true);
+                }
+            }
+        }
+
+        SequentialAnimation {
+            id: doneAnim
+            NumberAnimation {
+                target: chip
+                property: "y"
+                to: chip.upY
+                duration: 300
+                easing.type: Easing.OutBack
+            }
+            NumberAnimation {
+                target: chip
+                property: "tick"
+                from: 0
+                to: 1
+                duration: 420
+                easing.type: Easing.OutCubic
+            }
+            PauseAnimation {
+                duration: 1100
+            }
+            NumberAnimation {
+                target: chip
+                property: "y"
+                to: chip.awayY
+                duration: 320
+                easing.type: Easing.InCubic
+            }
+            ScriptAction {
+                script: {
+                    if (root.phase === "done")
+                        Qt.quit();  // this overlay belongs to the old version; the new one is already running
+                    root.phase = "";
                 }
             }
         }
@@ -226,7 +417,8 @@ ShellRoot {
             width: 224 * root.sizeScale
             height: 56 * root.sizeScale
             radius: height / 2
-            anchors.centerIn: parent
+            anchors.horizontalCenter: parent.horizontalCenter
+            y: root.pillCY - height / 2
             color: root.pillColor
             border.width: 1
             border.color: "#2a2a2e"

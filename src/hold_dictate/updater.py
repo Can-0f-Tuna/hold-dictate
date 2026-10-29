@@ -79,6 +79,8 @@ class Updater:
         self.next_check = time.monotonic() + FIRST_CHECK_AFTER
         self.busy = threading.Lock()
         self.ready = False  # installed; restart when idle
+        self.on_failed = lambda: None  # the pill's update chip shows "!" and goes away
+        self.announce = True  # notify after restarting; off when the pill shows it instead
 
     def can_update(self) -> str:
         """'' when self-update works here, else the reason it does not."""
@@ -110,6 +112,7 @@ class Updater:
         problem = self.can_update()
         if problem:
             self.status = f"cannot update automatically: {problem}"
+            self.on_failed()
             return False
         if not self.busy.acquire(blocking=False):
             return False
@@ -117,6 +120,7 @@ class Updater:
             if not self.available():
                 self.check()
                 if not self.available():
+                    self.on_failed()
                     return False
             uv, spec = find_uv(), install_spec(self.latest)
             if sys.platform == "win32":
@@ -127,6 +131,7 @@ class Updater:
             result = subprocess.run([uv, "tool", "install", "--force", spec], capture_output=True, text=True)
             if result.returncode != 0:
                 self.status = f"update failed: {(result.stderr or result.stdout).strip()[-300:]}"
+                self.on_failed()
                 return False
             self.ready = True
             self.status = f"{self.latest} installed, restarting"
@@ -136,7 +141,8 @@ class Updater:
 
     def restart(self):
         """Replaces this process with the newly installed version."""
-        self.notify(f"Updated to {self.latest}.")
+        if self.announce:
+            self.notify(f"Updated to {self.latest}.")
         cmd = run_command()
         if sys.platform == "win32":
             spec = install_spec(self.latest).replace("'", "''")
@@ -148,6 +154,7 @@ class Updater:
             flags = 0x00000008 | 0x08000000  # DETACHED_PROCESS | CREATE_NO_WINDOW
             subprocess.Popen(["powershell", "-NoProfile", "-WindowStyle", "Hidden", "-Command", script], creationflags=flags, close_fds=True)
             os._exit(0)
+        os.environ["HOLD_DICTATE_UPDATED"] = self.latest  # the new version finishes the pill's update chip
         os.execv(cmd[0], cmd)
 
     def update_now(self):
