@@ -189,10 +189,11 @@ def test_old_configs_keep_their_key(tmp_path):
 def test_old_sounds_setting_migrates(tmp_path, monkeypatch):
     p = tmp_path / "config.toml"
     p.write_text("sounds = true\n")
-    monkeypatch.setattr(config.sys, "platform", "darwin")
-    assert config.load(p).beeps is True
-    monkeypatch.setattr(config.sys, "platform", "linux")
-    assert config.load(p).beeps is False  # it never played there, so turning it on now must not surprise anyone
+    monkeypatch.setattr(config, "pill_available", lambda: False)  # macOS, Windows, Linux without the pill: it always played
+    assert config.load(p).beeps is True and Config().beeps is True
+    monkeypatch.setattr(config, "pill_available", lambda: True)
+    assert config.load(p).beeps is False  # it never played with the pill, so turning it on now must not surprise anyone
+    assert Config().beeps is False
     p.write_text("sounds = true\nbeeps = true\n")
     assert config.load(p).beeps is True
 

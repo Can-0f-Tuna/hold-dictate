@@ -185,7 +185,7 @@ details .items { margin-top:var(--s-6); }
 @media (max-width:720px) {
   .wrap { padding:0 var(--s-4); }
   .group { grid-template-columns:1fr; gap:var(--s-5); padding:var(--s-6) 0; }
-  .hero { padding:80px 0 var(--s-6); }
+  .hero { padding:80px 0 0; }
   .row { align-items:flex-start; }
   .wave { height:64px; margin-top:var(--s-6); }
   .cap { border-radius:var(--r-md); }
@@ -609,19 +609,20 @@ function renderUpdates(s) {
   $('auto_update').checked = s.config.auto_update;
   $('installUpd').hidden = !u.available || !!u.can_update;
   const failed = /^update failed: /.test(u.status || '');
-  msg.className = failed ? 'note bad' : 'note';
-  msg.textContent = failed ? `Couldn't install ${u.latest.replace(/^v/, '')}: ${u.status.replace(/^update failed: (error: )?/, '')}. Try again with Update now.`
+  msg.className = failed || updNote ? 'note bad' : 'note';
+  msg.textContent = updNote || (failed ? `Couldn't install ${u.latest.replace(/^v/, '')}: ${u.status.replace(/^update failed: (error: )?/, '')}. Try again with Update now.`
     : u.can_update ? `Updating from here isn't possible: ${u.can_update}.`
     : u.available ? `Version ${u.latest.replace(/^v/, "")} is available.` + (u.status && !u.status.endsWith('available') ? ' ' + u.status : '')
-    : u.latest ? 'You have the latest version.' : (u.status || 'Not checked yet.');
+    : u.latest ? 'You have the latest version.' : (u.status || 'Not checked yet.'));
 }
 $('checkUpd').onclick = async () => {
-  $('checkUpd').disabled = true; $('updMsg').className = 'note wait'; $('updMsg').textContent = 'Checking…';
+  updNote = ''; $('checkUpd').disabled = true; $('updMsg').className = 'note wait'; $('updMsg').textContent = 'Checking…';
   try { S = await api('/api/update/check', {}); render(S); } catch (e) { $('updMsg').className = 'note bad'; $('updMsg').textContent = e.message; }
   finally { $('checkUpd').disabled = false; }
 };
 // Installing: the percentage while uv works, "Restarting…" while the new version starts, then a tick.
-let upd = null; // { want: '0.5.2', shown: 0 } while an update this page started is under way
+let updNote = ''; // what went wrong with the last update, kept until the next try
+let upd = null; // { want: '0.5.2', from: '0.5.1', shown: 0, gone: 0 } while an update this page started is under way
 function showUpd(text, pct, done) {
   const msg = $('updMsg');
   msg.className = 'note ' + (done ? 'ok' : 'wait');
@@ -631,21 +632,32 @@ function showUpd(text, pct, done) {
 }
 async function followUpd() {
   let s;
-  try { s = await api('/api/state'); } catch { if (upd) { showUpd('Restarting hold-dictate…', 100); setTimeout(followUpd, 500); } return; } // it is restarting
+  try { s = await api('/api/state'); upd.gone = 0; }
+  catch { // it is restarting; after a minute, say it didn't come back
+    if (!upd) return;
+    upd.gone = upd.gone || Date.now(); upd.restarted = true;
+    if (Date.now() - upd.gone < 60000) { showUpd('Restarting hold-dictate…', 100); setTimeout(followUpd, 500); return; }
+    upd = null; updNote = `hold-dictate didn't come back after the update. Start it again ${where(S)}.`;
+    reachable = false; saveState('offline'); render(S); retry();
+    return;
+  }
   S = s;
-  if (s.version === upd.want) { upd = null; render(s); showUpd(`Updated to version ${s.version}.`, null, true); return; }
+  if (s.version !== upd.from) { upd = null; render(s); showUpd(`Updated to version ${s.version}.`, null, true); return; }
   const u = s.update;
   if (u.progress == null && !u.ready && /failed|cannot/.test(u.status)) { upd = null; render(s); return; }
+  if (upd.restarted && !u.ready) { // it came back, but as the old version
+    upd = null; updNote = `The update didn't take: you still have version ${s.version}. Try again with Update now.`; render(s); return;
+  }
   // uv reports stages, so between them the number creeps on towards the next one instead of sitting still
   const goal = u.ready ? 100 : (u.progress || 0);
   const aim = u.ready ? 100 : Math.min(Math.max(goal, upd.shown + 0.8), goal + 12, 99);
-  upd.shown += (aim - upd.shown) * 0.45;
+  upd.shown = Math.max(upd.shown, upd.shown + (aim - upd.shown) * 0.45); // never backwards
   showUpd(u.ready ? 'Restarting hold-dictate…' : `Downloading version ${upd.want}… ${Math.round(upd.shown)}%`, upd.shown);
   setTimeout(followUpd, 200);
 }
 $('installUpd').onclick = async () => {
-  const want = (S.update.latest || '').replace(/^v/, '');
-  try { S = await api('/api/update/install', {}); upd = { want, shown: 0 }; showUpd(`Downloading version ${want}… 0%`, 0); followUpd(); }
+  updNote = ''; const want = (S.update.latest || '').replace(/^v/, '');
+  try { S = await api('/api/update/install', {}); upd = { want, from: S.version, shown: 0, gone: 0 }; showUpd(`Downloading version ${want}… 0%`, 0); followUpd(); }
   catch (e) { $('updMsg').className = 'note bad'; $('updMsg').textContent = e.message; }
 };
 $('startSvc').onclick = async () => {
