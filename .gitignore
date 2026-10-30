@@ -10,3 +10,4 @@ env
 .env*
 .cache/design-quality/
 .cache/cloud-sim/
+uv.lock
