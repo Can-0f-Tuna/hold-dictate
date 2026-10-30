@@ -58,6 +58,9 @@ def runtime_file() -> Path:
     return cfgmod.config_dir() / "settings-server.json"
 
 
+SETTINGS_TITLE = "hold-dictate settings"  # the page's <title>; the Premium notice finds the browser by it
+
+
 def running_url(timeout: float = 1.0) -> str:
     """URL of the settings page of the hold-dictate that is running now, or ''."""
     try:

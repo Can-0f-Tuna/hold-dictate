@@ -1,6 +1,7 @@
 // The "you got Premium" notice. With the next dictation a ball slides out of the end of the pill, the
 // pill's own height and colour, shows a "!" and lets a small character climb out onto it. The character
-// flips down to the bottom edge of the screen, the ball closes back into the pill, and it walks along it and asks for a click in a short bubble.
+// flips down to the bottom edge of the screen, the ball closes back into the pill (or with it, when the
+// dictation ends first), and it walks along it and asks for a click in a short bubble.
 // Then it sinks into the edge until only its eyes show, and comes back out when the mouse touches it. The click opens the Premium settings. With no click for 30 seconds
 // it leaves, and the next dictation brings it back.
 // Built from plain items moved by one timeline, so nothing is repainted and it stays smooth. While it
@@ -40,6 +41,7 @@ Scope {
     property real lookX: 0      // -1..1, where the eyes look
     // Worked out when it starts: the animations must not follow the character as it moves
     property real ballX: 0
+    property real ballShown: 0  // the ball's own fade; it also fades with the pill
     property real startX: 0
     property real startY: 0
     property real landX: 0
@@ -61,6 +63,29 @@ Scope {
         } else if (phase === "waiting") {
             hideDelay.restart();
             giveUp.restart();
+        }
+    }
+
+    // The pill closed. The ball goes with it. If the character is not out yet it all waits for the next
+    // dictation; if it stands on the ball, it jumps now.
+    function pillClosed() {
+        if (phase !== "playing")
+            return;
+        if (intro.running) {
+            intro.stop();
+            phase = "leaving";
+            closedAnim.restart();
+        } else if (lookAround.running) {
+            lookAround.stop();
+            flight.restart();
+        }
+    }
+
+    Connections {
+        target: notice.shell
+        function onActiveChanged() {
+            if (!notice.shell.active)
+                notice.pillClosed();
         }
     }
 
@@ -105,6 +130,8 @@ Scope {
         if (phase === "leaving" || phase === "")
             return;
         intro.stop();
+        lookAround.stop();
+        flight.stop();
         stopWaiting();
         phase = "leaving";
         outro.restart();
@@ -175,7 +202,19 @@ Scope {
             color: notice.shell.pillColor
             border.width: 1
             border.color: "#2a2a2e"
-            opacity: 0
+            // the same fade, scale and drop as the pill, around the pill's centre, so they close as one
+            opacity: notice.ballShown * notice.shell.shown
+            transform: [
+                Scale {
+                    origin.x: win.width / 2 - ball.x
+                    origin.y: ball.height / 2
+                    xScale: 0.9 + 0.1 * notice.shell.shown
+                    yScale: xScale
+                },
+                Translate {
+                    y: (1 - notice.shell.shown) * (notice.shell.atTop ? -8 : 8)
+                }
+            ]
             Text {
                 id: mark
                 anchors.centerIn: parent
@@ -369,7 +408,7 @@ Scope {
                 duration: 260
             }
             ScriptAction {
-                script: ball.opacity = 1
+                script: notice.ballShown = 1
             }
             ParallelAnimation {
                 NumberAnimation {
@@ -441,7 +480,14 @@ Scope {
                 }
             }
 
-            // it looks around
+            ScriptAction {
+                script: lookAround.restart()
+            }
+        }
+
+        // It looks around.
+        SequentialAnimation {
+            id: lookAround
             NumberAnimation {
                 target: notice
                 property: "lookX"
@@ -460,6 +506,15 @@ Scope {
             PauseAnimation {
                 duration: 170
             }
+
+            ScriptAction {
+                script: flight.restart()
+            }
+        }
+
+        // The flip to the bottom edge and the walk along it.
+        SequentialAnimation {
+            id: flight
 
             // the crouch before the flip
             NumberAnimation {
@@ -500,8 +555,8 @@ Scope {
                         easing.type: Easing.InOutCubic
                     }
                     NumberAnimation {
-                        target: ball
-                        property: "opacity"
+                        target: notice
+                        property: "ballShown"
                         to: 0
                         duration: 100
                     }
@@ -701,6 +756,24 @@ Scope {
                     duration: 280
                     easing.type: Easing.OutBack
                 }
+            }
+        }
+
+        // The pill closed before the character was out.
+        SequentialAnimation {
+            id: closedAnim
+            NumberAnimation {
+                target: guy
+                property: "scale"
+                to: 0
+                duration: 160
+                easing.type: Easing.InCubic
+            }
+            PauseAnimation {
+                duration: 60
+            }
+            ScriptAction {
+                script: notice.finished()
             }
         }
 

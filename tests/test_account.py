@@ -216,3 +216,14 @@ def test_no_premium_notice_when_premium_is_taken_back_first(site, signed_in):
     site.premium = False
     account.check(max_age=0)
     assert not account.premium_notice()
+
+
+def test_everyone_with_premium_sees_the_notice_once_more(site, signed_in):
+    account = Account(site=site.url)
+    account._write({"token": "tok", "premium": True, "premium_notice": False, "checked": 0})
+    assert account.premium_notice()
+    account.premium_notice_seen()
+    assert not account.premium_notice()
+
+    account._write({"token": "tok", "premium": False, "premium_notice": False, "checked": 0})
+    assert not account.premium_notice()

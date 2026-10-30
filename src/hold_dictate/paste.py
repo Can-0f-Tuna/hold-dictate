@@ -90,6 +90,47 @@ def focused_app() -> str:
     return ""
 
 
+def _raise_window(title: str) -> bool:
+    """Focuses the window with this text in its title, switching to its workspace. False if it isn't there."""
+    title = title.lower()
+    if _wayland():
+        if os.environ.get("NIRI_SOCKET"):
+            for w in json.loads(_run(["niri", "msg", "-j", "windows"], text=True).stdout):
+                if title in (w.get("title") or "").lower():
+                    return _run(["niri", "msg", "action", "focus-window", "--id", str(w["id"])]).returncode == 0
+        elif os.environ.get("HYPRLAND_INSTANCE_SIGNATURE"):
+            for w in json.loads(_run(["hyprctl", "clients", "-j"], text=True).stdout):
+                if title in (w.get("title") or "").lower():
+                    return _run(["hyprctl", "dispatch", "focuswindow", f"address:{w['address']}"]).returncode == 0
+        elif os.environ.get("SWAYSOCK"):
+            stack = [json.loads(_run(["swaymsg", "-t", "get_tree"], text=True).stdout)]
+            while stack:
+                node = stack.pop()
+                if node.get("pid") and title in (node.get("name") or "").lower():
+                    return _run(["swaymsg", f"[con_id={node['id']}]", "focus"]).returncode == 0
+                stack += node.get("nodes", []) + node.get("floating_nodes", [])
+    elif shutil.which("xdotool"):
+        return _run(["xdotool", "search", "--name", title, "windowactivate"]).returncode == 0
+    return False
+
+
+def raise_window(title: str, wait: float = 6.0) -> bool:
+    """Brings a window that is just opening to the front, on the desktops that let us. A browser asked to open
+    a page in the background stays where it is on Wayland. Windows and macOS bring it forward by themselves."""
+    if not sys.platform.startswith("linux"):
+        return False
+    deadline = time.monotonic() + wait
+    while True:
+        try:
+            if _raise_window(title):
+                return True
+        except Exception:
+            pass
+        if time.monotonic() >= deadline:
+            return False
+        time.sleep(0.15)
+
+
 def is_terminal(app: str) -> bool:
     app = app.lower()
     return any(t in app for t in TERMINALS)

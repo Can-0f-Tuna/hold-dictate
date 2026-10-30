@@ -151,14 +151,22 @@ def cmd_file(args) -> int:
 
 
 def cmd_settings(args) -> int:
+    import threading
     import time
     import webbrowser
+    from . import paste
     from .account import Account
-    from .settings_ui import SettingsServer, running_url
+    from .settings_ui import SETTINGS_TITLE, SettingsServer, running_url
     anchor = ""
     if args.premium:  # the click on the Premium notice
         Account().premium_notice_seen()
         anchor = "#premGroup"
+
+    def show(address):
+        if args.premium:  # alongside: opening a browser that isn't running yet can take as long as the browser runs
+            threading.Thread(target=paste.raise_window, args=(SETTINGS_TITLE,)).start()
+        webbrowser.open(address + anchor)
+
     url = ""
     for _ in range(int(args.wait * 2) + 1):  # the service may still be starting
         url = running_url()
@@ -167,12 +175,12 @@ def cmd_settings(args) -> int:
         time.sleep(0.5)
     if url:
         print(f"Opening the settings in your browser:\n  {url}")
-        webbrowser.open(url + anchor)
+        show(url)
         return 0
     server = SettingsServer(cfgmod.load(), daemon=False, port=0).start()
     print("hold-dictate is not running, so this window serves the settings page until you press Ctrl+C:")
     print(f"  {server.url}")
-    webbrowser.open(server.url + anchor)
+    show(server.url)
     try:
         while True:
             time.sleep(1)

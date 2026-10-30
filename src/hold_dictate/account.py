@@ -21,6 +21,7 @@ from . import __version__, config as cfgmod
 SITE = os.environ.get("HOLD_DICTATE_SITE", "https://hold-dictate.vercel.app").rstrip("/")
 CHECK_EVERY = 10 * 60  # seconds between checks with the server while the app runs
 STATE_SECONDS = 10 * 60  # how long a started sign-in may take
+NOTICE_ROUND = 2  # raise it to show the Premium notice once more to everyone with Premium
 
 
 def account_path() -> Path:
@@ -119,7 +120,7 @@ class Account:
             return "The sign-in didn't go through. Go back to the settings and try again."
         user = reply.get("user") or {}
         self._write({"token": reply["token"], "email": user.get("email", ""), "name": user.get("name", ""),
-                     "premium": bool(user.get("premium")), "checked": time.time()})
+                     "premium": bool(user.get("premium")), "checked": time.time(), "notice_round": NOTICE_ROUND})
         return ""
 
     def check(self, max_age: float = CHECK_EVERY, timeout: float = 8.0) -> bool:
@@ -147,14 +148,13 @@ class Account:
         return True
 
     def premium_notice(self) -> bool:
-        """True from the moment Premium is turned on for this account until the user has seen the notice."""
-        return bool(self.data().get("premium_notice"))
+        """True from the moment Premium is turned on for this account until the user has clicked the notice."""
+        data = self.data()
+        return bool(data.get("premium") and (data.get("premium_notice") or data.get("notice_round", 1) < NOTICE_ROUND))
 
     def premium_notice_seen(self):
-        data = self.data()
-        if data.get("premium_notice"):
-            data["premium_notice"] = False
-            self._write(data)
+        if self.premium_notice():
+            self._write(dict(self.data(), premium_notice=False, notice_round=NOTICE_ROUND))
 
     def tick(self):
         """Called often by the app; checks in the background about every 10 minutes."""

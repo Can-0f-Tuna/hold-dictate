@@ -131,3 +131,28 @@ def test_grab_selection_unknown_app_reads_the_primary_selection(board):
     text, restore = paste.grab_selection("")  # GNOME or KDE on Wayland: no Ctrl+C that could stop a program
     restore()
     assert text == "selected in a terminal" and not log.exists() and clip.read_text() == "kept"
+
+
+@pytest.mark.parametrize("desktop, listing, expected", [
+    ("NIRI_SOCKET", '[{"id": 7, "title": "hold-dictate settings - Firefox"}]', ["niri", "msg", "action", "focus-window", "--id", "7"]),
+    ("HYPRLAND_INSTANCE_SIGNATURE", '[{"address": "0xab", "title": "Hold-Dictate Settings"}]', ["hyprctl", "dispatch", "focuswindow", "address:0xab"]),
+    ("SWAYSOCK", '{"nodes": [{"id": 4, "pid": 9, "name": "hold-dictate settings", "nodes": []}]}', ["swaymsg", "[con_id=4]", "focus"]),
+])
+def test_raise_window_finds_the_browser_by_its_title(monkeypatch, desktop, listing, expected):
+    calls = []
+    for name in ("NIRI_SOCKET", "HYPRLAND_INSTANCE_SIGNATURE", "SWAYSOCK"):
+        monkeypatch.delenv(name, raising=False)
+    monkeypatch.setenv(desktop, "x")
+    monkeypatch.setenv("WAYLAND_DISPLAY", "wayland-1")
+    monkeypatch.setattr(paste.sys, "platform", "linux")
+    monkeypatch.setattr(paste, "_run", lambda cmd, **kw: (calls.append(cmd), type("R", (), {"stdout": listing, "returncode": 0})())[1])
+    assert paste.raise_window("hold-dictate settings")
+    assert calls[-1] == expected
+
+
+def test_raise_window_gives_up_when_the_window_never_comes(monkeypatch):
+    monkeypatch.setenv("NIRI_SOCKET", "x")
+    monkeypatch.setenv("WAYLAND_DISPLAY", "wayland-1")
+    monkeypatch.setattr(paste.sys, "platform", "linux")
+    monkeypatch.setattr(paste, "_run", lambda cmd, **kw: type("R", (), {"stdout": "[]", "returncode": 0})())
+    assert not paste.raise_window("hold-dictate settings", wait=0)
