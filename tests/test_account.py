@@ -189,3 +189,30 @@ def test_dictation_waits_for_a_sign_in(signed_out):
                   on_no_key=lambda: opened.append(1), account=Account(site="http://127.0.0.1:9"))
     d.on_action("start")
     assert not started and opened and "sign in" in Fb.errors[-1]
+
+
+def test_the_premium_notice_waits_for_premium_and_goes_after_the_click(site, signed_in):
+    account = Account(site=site.url)
+    account._write({"token": "tok", "premium": False, "checked": 0})
+    account.check(max_age=0)
+    assert not account.premium_notice()
+
+    site.premium = True
+    account.check(max_age=0)
+    assert account.premium_notice()
+    account.check(max_age=0)  # still waiting for the click
+    assert account.premium_notice()
+
+    account.premium_notice_seen()
+    account.check(max_age=0)
+    assert not account.premium_notice()
+
+
+def test_no_premium_notice_when_premium_is_taken_back_first(site, signed_in):
+    account = Account(site=site.url)
+    account._write({"token": "tok", "premium": False, "checked": 0})
+    site.premium = True
+    account.check(max_age=0)
+    site.premium = False
+    account.check(max_age=0)
+    assert not account.premium_notice()

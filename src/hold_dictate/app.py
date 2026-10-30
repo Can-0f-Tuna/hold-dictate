@@ -347,16 +347,28 @@ def run(cfg: Config) -> int:
     dictation.on_no_key = server.open
     dictation.save_settings = server.save  # under the server's lock, on top of the settings as they are then
 
+    feedback.pending_premium = account.premium_notice
+
+    def announce_premium():
+        wanted = account.premium_notice()
+        if wanted and not feedback.events:  # no overlay on this system
+            feedback.notify("You got Premium! Open the settings to choose your features.")
+            account.premium_notice_seen()
+        elif not wanted:
+            feedback.premium_gone()
+
     def tick():
         dictation.tick()
         updater.tick()
         account.tick()
+        announce_premium()
 
     def listen():
         if backend is None:
             while not done.wait(5):
                 updater.tick()
                 account.tick()
+                announce_premium()
             return
         try:
             backend.run(detector, dictation.on_action, tick)

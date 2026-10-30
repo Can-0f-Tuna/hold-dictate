@@ -214,6 +214,25 @@ details .items { margin-top:var(--s-6); }
   box-shadow:inset 0 1px 0 var(--key-hi), 0 3px 0 -1px var(--key-shade), 0 3px 0 0 var(--key-edge), 0 14px 20px -14px var(--key-glow); }
 .keys.mini .cap.down { transform:translateY(2px); box-shadow:inset 0 1px 0 var(--key-hi), 0 1px 0 -1px var(--key-shade), 0 1px 0 0 var(--key-edge), 0 8px 12px -10px var(--key-glow); }
 .keys.mini .word { font-size:var(--t-base); font-weight:400; color:var(--muted); letter-spacing:0; }
+/* The controls opening after the "you got Premium" notice */
+.arrows { display:inline-flex; flex:none; gap:1px; margin-inline-end:var(--s-2); align-self:center; }
+.arrows i { width:9px; height:9px; border-block-start:2.5px solid var(--accent); border-inline-end:2.5px solid var(--accent); transform:rotate(45deg); }
+@media (prefers-reduced-motion: no-preference) {
+  @keyframes prem-open { from { opacity:0; transform:translateY(18px) scale(.96); } 60% { opacity:1; transform:translateY(-3px) scale(1.01); } to { opacity:1; transform:none; } }
+  @keyframes prem-pop { from { transform:scale(.4); } 60% { transform:scale(1.2); } to { transform:scale(1); } }
+  @keyframes prem-ring { from { box-shadow:0 0 0 0 color-mix(in srgb, var(--accent) 55%, transparent); } to { box-shadow:0 0 0 14px transparent; } }
+  @keyframes prem-arrow { 0%, 100% { opacity:.2; } 40% { opacity:1; } }
+  @keyframes prem-nudge { 0%, 100% { translate:0; } 50% { translate:5px; } }
+  .reveal .items > * { animation:prem-open .55s cubic-bezier(.2,.8,.2,1) backwards; }
+  .reveal .items > :nth-child(2) { animation-delay:.1s; }
+  .reveal .items > :nth-child(3) { animation-delay:.3s; }
+  .reveal .items > :nth-child(4) { animation-delay:.5s; }
+  .reveal .try { animation:prem-pop .45s cubic-bezier(.2,.8,.2,1) .55s backwards, prem-ring 1.3s ease-out 1s 5; }
+  .arrows { animation:prem-nudge .9s ease-in-out infinite; }
+  .arrows i { animation:prem-arrow .9s linear infinite; }
+  .arrows i:nth-child(2) { animation-delay:.15s; }
+  .arrows i:nth-child(3) { animation-delay:.3s; }
+}
 .learned { gap:0; max-height:320px; overflow:auto; border-top:1px solid var(--line); }
 .learned .pair { min-height:40px; border-bottom:1px solid var(--line); padding-inline-start:var(--s-1); }
 .learned .pair > span { min-width:0; overflow-wrap:anywhere; }
@@ -449,7 +468,7 @@ details .items { margin-top:var(--s-6); }
 
 <script>
 const TOKEN = new URLSearchParams(location.search).get('t') || '';
-history.replaceState(null, '', '/?t=' + encodeURIComponent(TOKEN));
+history.replaceState(null, '', '/?t=' + encodeURIComponent(TOKEN) + location.hash);
 const $ = id => document.getElementById(id);
 const MAC = navigator.platform.startsWith('Mac');
 const ICON_OK = '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3.5 8.5 6.5 11.5 12.5 4.5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>';
@@ -595,6 +614,22 @@ function renderPremium(s) {
     const v = { ...S.config.learned_fixes }; delete v[heard]; save({ learned_fixes: v }); });
   for (const term of terms) row('t:' + term, [['', term]], () => save({ learned_terms: S.premium.terms.filter(t => t !== term).join(', ') }));
   });
+}
+// After a click on the "you got Premium" notice: the controls open one by one, with arrows at each.
+function revealPremium() {
+  const group = $('premGroup');
+  history.replaceState(null, '', location.pathname + location.search);
+  if (!group.classList.contains('on')) return;
+  group.classList.add('reveal');
+  for (const c of [$('recEdit'), $('premium_style'), $('premium_learn')]) {
+    const arrows = document.createElement('span');
+    arrows.className = 'arrows';
+    arrows.setAttribute('aria-hidden', 'true');
+    arrows.innerHTML = '<i></i><i></i><i></i>';
+    c.before(arrows);
+    c.addEventListener('click', () => arrows.remove(), { once: true });
+    c.classList.add('try');
+  }
 }
 for (const id of ['premium_style', 'premium_learn']) $(id).addEventListener('change', () => save({ [id]: $(id).checked }));
 $('editOff').onclick = () => save({ edit_hotkey: '' });
@@ -1110,7 +1145,8 @@ saveState('idle');
 const refresh = () => api('/api/state').then(s => { S = s; render(s); if ($('save').classList.contains('failed')) saveState('idle'); }).catch(() => {}); // the hero and the stale banner already say what went wrong
 if (S) render(S); else refresh();
 // Premium may have been turned on (or the account blocked) since the last check
-if (S && S.account) api('/api/account/check', {}).then(s => { S = s; render(s); }).catch(() => {});
+const check = S && S.account ? api('/api/account/check', {}).then(s => { S = s; render(s); }).catch(() => {}) : Promise.resolve();
+if (location.hash === '#premGroup') { $('premGroup').scrollIntoView({ block: 'start' }); check.then(revealPremium); }
 window.addEventListener('focus', () => { if (!recording && !document.activeElement.matches('input[type=text], input[type=password], input[type=number]')) refresh(); });
 </script>
 </body>

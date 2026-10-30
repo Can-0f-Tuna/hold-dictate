@@ -137,11 +137,24 @@ class Account:
                 self._clear()
             return False
         if status == 200:
+            current = self.data()  # read again: the notice may have been clicked while we waited
+            premium = bool(reply.get("premium"))
             data.update(email=reply.get("email", data.get("email", "")), name=reply.get("name", data.get("name", "")),
-                        premium=bool(reply.get("premium")), checked=time.time())
-            if self.data().get("token") == data["token"]:
+                        premium=premium, checked=time.time(),
+                        premium_notice=premium and bool(current.get("premium_notice") or not current.get("premium")))
+            if current.get("token") == data["token"]:
                 self._write(data)
         return True
+
+    def premium_notice(self) -> bool:
+        """True from the moment Premium is turned on for this account until the user has seen the notice."""
+        return bool(self.data().get("premium_notice"))
+
+    def premium_notice_seen(self):
+        data = self.data()
+        if data.get("premium_notice"):
+            data["premium_notice"] = False
+            self._write(data)
 
     def tick(self):
         """Called often by the app; checks in the background about every 10 minutes."""

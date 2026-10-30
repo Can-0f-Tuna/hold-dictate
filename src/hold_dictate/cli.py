@@ -153,7 +153,12 @@ def cmd_file(args) -> int:
 def cmd_settings(args) -> int:
     import time
     import webbrowser
+    from .account import Account
     from .settings_ui import SettingsServer, running_url
+    anchor = ""
+    if args.premium:  # the click on the Premium notice
+        Account().premium_notice_seen()
+        anchor = "#premGroup"
     url = ""
     for _ in range(int(args.wait * 2) + 1):  # the service may still be starting
         url = running_url()
@@ -162,12 +167,12 @@ def cmd_settings(args) -> int:
         time.sleep(0.5)
     if url:
         print(f"Opening the settings in your browser:\n  {url}")
-        webbrowser.open(url)
+        webbrowser.open(url + anchor)
         return 0
     server = SettingsServer(cfgmod.load(), daemon=False, port=0).start()
     print("hold-dictate is not running, so this window serves the settings page until you press Ctrl+C:")
     print(f"  {server.url}")
-    server.open()
+    webbrowser.open(server.url + anchor)
     try:
         while True:
             time.sleep(1)
@@ -252,6 +257,7 @@ def main(argv=None) -> int:
     s.set_defaults(fn=cmd_setup)
     st = sub.add_parser("settings", help="open the settings page in your browser")
     st.add_argument("--wait", type=float, default=0, help="seconds to wait for hold-dictate to start")
+    st.add_argument("--premium", action="store_true", help="go straight to the Premium features")
     st.set_defaults(fn=cmd_settings)
     sub.add_parser("doctor", help="check that everything is in place").set_defaults(fn=cmd_doctor)
     f = sub.add_parser("transcribe", help="transcribe a WAV file and print it")

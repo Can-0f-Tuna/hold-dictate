@@ -45,6 +45,8 @@ class Feedback:
         self.pending_update = lambda: ""  # version waiting to be installed; the pill shows a "!" tab
         self.proc = None
         self.events = None
+        self.pending_premium = lambda: False  # the next dictation brings the "you got Premium" notice
+        self.premium_sent = False
         if pill_available():
             self.events = open(EVENTS_FILE, "w", buffering=1)
             updated = os.environ.pop("HOLD_DICTATE_UPDATED", "")
@@ -73,6 +75,10 @@ class Feedback:
         if self.events:
             self.events.write(line + "\n")
 
+    def _send_look(self):
+        c = self.cfg
+        self._send(f"C {c.overlay_bg} {c.overlay_bars} {c.overlay_position} {c.overlay_size:.2f} {c.overlay_style}")
+
     def _beep(self, name):
         if not (self.cfg and self.cfg.beeps):
             return
@@ -88,9 +94,11 @@ class Feedback:
         if self.events:
             self._ensure_overlay()
         if self.cfg:
-            c = self.cfg
-            self._send(f"C {c.overlay_bg} {c.overlay_bars} {c.overlay_position} {c.overlay_size:.2f} {c.overlay_style}")
+            self._send_look()
         self._send(f"U {self.pending_update() or '-'}")
+        if self.pending_premium():
+            self._send("P on")
+            self.premium_sent = True
         self._send("S")
         self._beep("start")
 
@@ -103,6 +111,12 @@ class Feedback:
 
     def update_failed(self):
         self._send("F")
+
+    def premium_gone(self):
+        """Premium was taken back before the notice was clicked."""
+        if self.premium_sent:
+            self._send("P -")
+            self.premium_sent = False
 
     def done(self):
         self._send("Q")

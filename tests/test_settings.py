@@ -89,6 +89,7 @@ def test_overlay_gets_the_style():
     fb.events = type("W", (), {"write": lambda self, line: fb.sent.append(line)})()
     fb._ensure_overlay = lambda: None
     fb.pending_update = lambda: ""
+    fb.pending_premium = lambda: False
     fb.recording()
     assert fb.sent[0].split() == ["C", "#0a0a0b", "#6b80ff", "bottom", "1.00", "lines"]
     assert fb.sent[1:] == ["U -\n", "S\n"]
