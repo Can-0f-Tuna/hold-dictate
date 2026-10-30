@@ -70,7 +70,8 @@ class Dictation:
             if action == "start":
                 self._check_correction()
                 if self.recorder is None:
-                    if which == "edit" and not self._edit_allowed():
+                    which = self._edit_mode() if which == "edit" else ""
+                    if which is None:
                         return
                     self.begin(which)
                 elif mode != "hold":
@@ -86,12 +87,16 @@ class Dictation:
         self.fb.level(value)
         self.voice.feed(value, time.monotonic())
 
-    def _edit_allowed(self) -> bool:
+    def _edit_mode(self):
+        """What the edit shortcut does now: "edit"; "" (a plain dictation, as before Premium) without
+        Premium or signed out (begin() then asks for the sign-in); None after showing why it can't edit."""
         problem = self.premium.problem()
-        if problem and (self.account is None or self.account.signed_in()):  # signed out: begin() says so
-            self.fb.error("Edit by voice is a Premium feature." if problem == premiummod.PREMIUM_ONLY else problem)
-            return False
-        return True
+        if not problem:
+            return "edit"
+        if problem == premiummod.PREMIUM_ONLY or (self.account is not None and not self.account.signed_in()):
+            return ""
+        self.fb.error(problem)
+        return None
 
     def begin(self, which: str = ""):
         if self.account is not None and not self.account.signed_in():

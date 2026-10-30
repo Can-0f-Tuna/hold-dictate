@@ -307,16 +307,13 @@ def test_edit_copy_only_app_keeps_the_result_on_the_clipboard(api):
     assert out.copied == ["new text"] and grab.restored == 0
 
 
-def test_edit_is_premium_only(api):
+def test_without_premium_the_edit_shortcut_dictates_as_before(api):
     grab, client = Grab("some text"), FakePremium(problem=premium.PREMIUM_ONLY)
     started = []
     d, out, fb = edit_dictation(api, grab, client)
-    d.recorder_factory = lambda level: started.append(1)
+    d.recorder_factory = lambda level: started.append(1) or FakeRecorderStub()
     d.on_action("edit:start")
-    d.on_action("edit:stop")
-    assert fb.log == [("error", "Edit by voice is a Premium feature.")] and not started
-    d.on_action("start")  # dictation itself still works
-    assert started == [1]
+    assert started == [1] and d.which == "" and not any(kind == "error" for kind, *_ in fb.log)
 
 
 def test_edit_without_a_groq_key(api):
@@ -463,3 +460,8 @@ def test_learned_terms_join_the_spelling_hint_within_the_limit():
     assert len(prompt.encode()) <= PROMPT_BYTES and "term000" in prompt and "term099" not in prompt
     cfg.premium_learn = False
     assert language_hints(cfg)[1] == "Kubernetes"
+
+
+class FakeRecorderStub:
+    def stop(self):
+        return None
