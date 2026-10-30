@@ -3,6 +3,7 @@ import struct
 import sys
 import threading
 import time
+from collections import deque
 
 import pytest
 
@@ -297,7 +298,7 @@ def wait_for(check):
         time.sleep(0.02)
 
 
-TONE = (np.sin(2 * np.pi * 220 * np.arange(audio.SAMPLE_RATE) / audio.SAMPLE_RATE) * 0.3).astype(np.float32)
+TONE = (np.sin(2 * np.pi * 220 * np.arange(2 * audio.SAMPLE_RATE) / audio.SAMPLE_RATE) * 0.3).astype(np.float32)
 QUIET = np.zeros(audio.SAMPLE_RATE // 2, np.float32)
 
 
@@ -313,13 +314,14 @@ class Clips:
 
 def typer(recorder, heard, typed=None, **kw):
     typed = [] if typed is None else typed
-    LiveTyper.last_sent = 0.0
+    LiveTyper.sent.clear()
     return LiveTyper(recorder, lambda s: next(heard), str, lambda t: typed.append(t) or "", gap=0.0, **kw), typed
 
 
 def test_words_are_typed_while_you_speak_and_the_rest_at_the_end(api, monkeypatch):
     monkeypatch.setattr(LiveTyper, "GAP", 0.0)
-    monkeypatch.setattr(LiveTyper, "last_sent", 0.0)
+    monkeypatch.setattr(LiveTyper, "FAST", 0.0)
+    monkeypatch.setattr(LiveTyper, "sent", deque())
     api.text = "one two three four"
     typed, fb = [], FakeFeedback()
     d = Dictation(cfg_for(api, live_text=True, min_hold=0), fb, recorder_factory=LiveRecorder,
@@ -331,6 +333,39 @@ def test_words_are_typed_while_you_speak_and_the_rest_at_the_end(api, monkeypatc
     assert "".join(typed) == "one two three four"
     assert d.last_text == "one two three four"
     assert not any(isinstance(e, tuple) and e[0] == "error" for e in fb.log)
+
+
+def test_the_first_requests_come_quickly_and_the_rest_keep_to_the_limit():
+    live, _ = typer(Clips(TONE), iter([]))
+    live.gap = 3.7
+    LiveTyper.sent.append(time.monotonic() - 2)
+    assert live.may_send()
+    live.steps = LiveTyper.FAST_STEPS
+    assert not live.may_send()
+    live.steps = 0
+    LiveTyper.sent.extend([time.monotonic() - 10] * LiveTyper.PER_MINUTE)
+    live.steps = 0
+    assert not live.may_send()
+
+
+def test_a_failed_request_pauses_live_typing_and_it_comes_back():
+    clip = np.concatenate([TONE, TONE, QUIET])
+    typed = []
+    answers = iter([RuntimeError("limit"), "one two"])
+
+    def heard(_):
+        answer = next(answers)
+        if isinstance(answer, Exception):
+            raise answer
+        return answer
+
+    LiveTyper.sent.clear()
+    live = LiveTyper(Clips(clip), heard, str, lambda t: typed.append(t) or "", gap=0.0)
+    live.AFTER_ERROR = 0.1
+    live.start()
+    wait_for(lambda: typed)
+    live.stop()
+    assert typed == ["one two"]
 
 
 def test_the_last_words_of_an_unfinished_phrase_wait():
@@ -365,10 +400,14 @@ def test_a_failed_live_request_leaves_the_rest_for_the_last_pass():
     clip = np.concatenate([TONE, QUIET])
     live, typed = typer(Clips(clip), iter([]))
 
+    calls = []
+
     def fail(_):
+        calls.append(1)
         raise RuntimeError("429")
     live.transcribe = fail
-    live.run()  # returns by itself
+    live.start()
+    wait_for(lambda: calls)
     assert typed == []
     assert live.finish(clip, lambda s: "all of it") == "all of it" and typed == ["all of it"]
 

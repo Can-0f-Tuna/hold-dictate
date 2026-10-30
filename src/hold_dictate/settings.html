@@ -668,8 +668,11 @@ function render(s) {
   showProblem(s.last_problem);
   $('beeps').checked = c.beeps;
   document.querySelectorAll('#live_text button').forEach(b => b.setAttribute('aria-pressed', String((b.dataset.v === 'live') === c.live_text)));
+  const liveOff = (s.account && s.account.premium && c.premium_style) ? 'Writing that fits the app is on, so the text still comes when you finish. Turn it off to use this.'
+    : c.post_hook.trim() ? 'A text hook is on, so the text still comes when you finish. Remove it to use this.'
+    : s.platform !== 'linux' && c.hotkey_mode === 'hold' ? 'While you hold the keys nothing can be typed on this system, so the text comes when you let go. Use Tap or hold, or Tap on/off, to see it as you speak.' : '';
   $('liveHint').textContent = c.live_text
-    ? "The words appear in the text box you are in while you talk, in steps of a few seconds. Words can't be corrected once typed, so it can be a little less accurate. Each step is a request to your speech service, which counts toward its limits. Not used when writing that fits the app or a text hook is on."
+    ? liveOff || "The words appear in the text box you are in while you talk, a few at a time. Words can't be corrected once typed, so it can be a little less accurate. Each step is a request to your speech service, which counts toward its limits."
     : 'All the text is pasted at once when you finish. The most accurate way.';
   $('lookGroup').hidden = !s.overlay;
   $('overlay_bg').value = c.overlay_bg; $('overlay_bars').value = c.overlay_bars;

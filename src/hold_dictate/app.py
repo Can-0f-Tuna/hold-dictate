@@ -125,7 +125,7 @@ class Dictation:
         if self._types_live(which):
             self.live = LiveTyper(self.recorder, self._transcribe_live, lambda raw: textproc.clean(raw, self.cfg), self._type_live,
                                   ready=lambda: sys.platform.startswith("linux") or self.latched,
-                                  gap=1.0 if self.cfg.provider == "local" else LiveTyper.GAP)
+                                  **({"gap": 1.0, "per_minute": 0} if self.cfg.provider == "local" else {}))
             self.live.start()
         if self.cfg.hotkey_mode != "hold" and self.cfg.silence_stop > 0:
             threading.Thread(target=self._watch_silence, args=(self.recorder,), daemon=True).start()
