@@ -264,6 +264,15 @@ def _windows(text: str, shift: bool, submit: bool) -> str:
     return ""
 
 
+def press_enter():
+    if sys.platform in ("darwin", "win32"):
+        _pynput_enter()
+    elif _wayland():
+        _enter_wayland()
+    else:
+        _enter_x11()
+
+
 def paste_text(text: str, app: str | None = None, shift: bool | None = None, submit: bool = False) -> str:
     """Pastes text into the focused field, then presses Enter if submit. shift None picks Ctrl+Shift+V for
     terminals on Linux. Returns '' on success or a short note for the user."""

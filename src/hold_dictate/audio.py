@@ -8,7 +8,16 @@ SAMPLE_RATE = 16000
 BLOCK = 320  # 20 ms
 
 
-class MicError(RuntimeError):
+class Problem(RuntimeError):
+    """An error, with `brief`: the same thing in a few plain words, and `icon`: the mark for it on the screen."""
+
+    def __init__(self, message: str, brief: str = "", icon: str = "alert"):
+        super().__init__(message)
+        self.brief = brief
+        self.icon = icon  # alert | mic | net: a mic or net mark says it all, without opening the settings
+
+
+class MicError(Problem):
     pass
 
 
@@ -19,7 +28,7 @@ class Recorder:
         try:
             import sounddevice as sd
         except OSError as e:  # PortAudio missing (Linux: install libportaudio2)
-            raise MicError(f"audio library not found: {e}") from e
+            raise MicError(f"audio library not found: {e}", "The audio library is missing. Install libportaudio2.", "mic") from e
         self.on_level = on_level
         self.chunks: list[np.ndarray] = []
         try:
@@ -28,7 +37,7 @@ class Recorder:
             )
             self.stream.start()
         except Exception as e:
-            raise MicError(f"cannot open the microphone: {e}") from e
+            raise MicError(f"cannot open the microphone: {e}", "Can't open the microphone. Check that it's plugged in and allowed.", "mic") from e
 
     def _callback(self, indata, frames, time_info, status):
         samples = indata[:, 0].copy()
@@ -36,12 +45,17 @@ class Recorder:
         if self.on_level:
             self.on_level(level_of(samples))
 
+    def snapshot(self) -> np.ndarray:
+        """Everything recorded so far; the recording goes on."""
+        chunks = list(self.chunks)
+        if not chunks:
+            return np.zeros(0, dtype=np.float32)
+        return np.concatenate(chunks).astype(np.float32) / 32768
+
     def stop(self) -> np.ndarray:
         self.stream.stop()
         self.stream.close()
-        if not self.chunks:
-            return np.zeros(0, dtype=np.float32)
-        return np.concatenate(self.chunks).astype(np.float32) / 32768
+        return self.snapshot()
 
 
 def level_of(samples: np.ndarray) -> float:
@@ -75,18 +89,33 @@ class VoiceMeter:
             self.heard, self.last = True, now
 
 
-def speech_only(audio: np.ndarray, pad_ms=200, gap_ms=500, frame_ms=30):
-    """Drops silence so it costs nothing and cannot turn into hallucinated words. None if no speech.
+def _voiced(audio: np.ndarray, frame: int) -> np.ndarray:
+    """One bool per frame: clearly above the quietest part of the clip."""
+    n = len(audio) // frame
+    rms = np.sqrt(np.mean(audio[: n * frame].reshape(n, frame) ** 2, axis=1)) + 1e-9
+    return rms > max(np.percentile(rms, 10) * 3, 10 ** (-48 / 20))
 
-    A frame counts as speech when it is clearly above the quietest part of the clip."""
+
+def is_dead(audio: np.ndarray) -> bool:
+    """A second or more of next to nothing: no room hums this low, so the microphone is muted or not the right one."""
+    return len(audio) >= SAMPLE_RATE and float(np.max(np.abs(audio))) < 10 ** (-70 / 20)
+
+
+def ends_quiet(audio: np.ndarray, quiet_ms=400, frame_ms=30) -> bool:
+    """True when the clip ends in a pause, a good place to cut it."""
+    frame = SAMPLE_RATE * frame_ms // 1000
+    if len(audio) // frame == 0:
+        return False
+    return not _voiced(audio, frame)[-max(1, quiet_ms // frame_ms):].any()
+
+
+def speech_only(audio: np.ndarray, pad_ms=200, gap_ms=500, frame_ms=30):
+    """Drops silence so it costs nothing and cannot turn into hallucinated words. None if no speech."""
     frame = SAMPLE_RATE * frame_ms // 1000
     n = len(audio) // frame
     if n == 0:
         return None
-    rms = np.sqrt(np.mean(audio[: n * frame].reshape(n, frame) ** 2, axis=1)) + 1e-9
-    floor = np.percentile(rms, 10)
-    threshold = max(floor * 3, 10 ** (-48 / 20))
-    voiced = rms > threshold
+    voiced = _voiced(audio, frame)
     if voiced.sum() < 3:
         return None
     # Close gaps shorter than gap_ms, then pad each run.

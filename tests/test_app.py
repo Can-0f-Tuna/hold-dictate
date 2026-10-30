@@ -11,6 +11,7 @@ import numpy as np
 from hold_dictate import audio
 from hold_dictate.app import Dictation
 from hold_dictate.config import Config
+from hold_dictate.live import LiveTyper
 from hold_dictate.hotkey import EV_FORMAT, EvdevBackend, HoldDetector, parse_hotkey
 
 
@@ -22,8 +23,9 @@ class FakeFeedback:
     def recording(self): self.log.append("recording")
     def working(self): self.log.append("working")
     def done(self): self.log.append("done")
-    def error(self, m): self.log.append(("error", m))
+    def error(self, m, brief="", icon="alert"): self.log.append(("error", brief or m))
     def notify(self, m): self.log.append(("notify", m))
+    def clear_problem(self): pass
 
 
 class FakeRecorder:
@@ -282,3 +284,120 @@ def test_paste_and_copy_last(api):
     assert d.last_text == "hello world" and d.last_app == "slack"
     assert d.paste_last() == "" and out.calls[-1] == {"text": "hello world", "app": "slack", "shift": None, "submit": False}
     assert d.copy_last() == "" and out.copied == ["hello world"]
+
+
+class LiveRecorder(FakeRecorder):
+    def snapshot(self):
+        return self.stop()
+
+
+def wait_for(check):
+    deadline = time.monotonic() + 3
+    while not check() and time.monotonic() < deadline:
+        time.sleep(0.02)
+
+
+TONE = (np.sin(2 * np.pi * 220 * np.arange(audio.SAMPLE_RATE) / audio.SAMPLE_RATE) * 0.3).astype(np.float32)
+QUIET = np.zeros(audio.SAMPLE_RATE // 2, np.float32)
+
+
+class Clips:
+    """snapshot() gives each clip once, the last one for ever."""
+
+    def __init__(self, *clips):
+        self.clips = list(clips)
+
+    def snapshot(self):
+        return self.clips.pop(0) if len(self.clips) > 1 else self.clips[0]
+
+
+def typer(recorder, heard, typed=None, **kw):
+    typed = [] if typed is None else typed
+    LiveTyper.last_sent = 0.0
+    return LiveTyper(recorder, lambda s: next(heard), str, lambda t: typed.append(t) or "", gap=0.0, **kw), typed
+
+
+def test_words_are_typed_while_you_speak_and_the_rest_at_the_end(api, monkeypatch):
+    monkeypatch.setattr(LiveTyper, "GAP", 0.0)
+    monkeypatch.setattr(LiveTyper, "last_sent", 0.0)
+    api.text = "one two three four"
+    typed, fb = [], FakeFeedback()
+    d = Dictation(cfg_for(api, live_text=True, min_hold=0), fb, recorder_factory=LiveRecorder,
+                  paster=lambda t, **kw: typed.append(t) or "", focus=lambda: "")
+    d.on_action("start")
+    wait_for(lambda: typed)
+    d.on_action("stop")
+    settle(d)
+    assert "".join(typed) == "one two three four"
+    assert d.last_text == "one two three four"
+    assert not any(isinstance(e, tuple) and e[0] == "error" for e in fb.log)
+
+
+def test_the_last_words_of_an_unfinished_phrase_wait():
+    clip = np.concatenate([QUIET, TONE, TONE])
+    live, typed = typer(Clips(clip), iter(["one two three", "one two three four five"]))
+
+    def stop_after_two(text):
+        typed.append(text)
+        if len(typed) == 2:
+            live.stop()
+        return ""
+    live.type_text = stop_after_two
+    live.run()
+    assert typed == ["one", " two three"]
+
+
+def test_a_finished_phrase_is_typed_whole_and_the_next_one_follows_it():
+    first = np.concatenate([TONE, QUIET])
+    live, typed = typer(Clips(first, np.concatenate([first, QUIET, TONE, QUIET])), iter(["one", "two"]))
+
+    def stop_after_two(text):
+        typed.append(text)
+        if len(typed) == 2:
+            live.stop()
+        return ""
+    live.type_text = stop_after_two
+    live.run()
+    assert typed == ["one", " two"]
+
+
+def test_a_failed_live_request_leaves_the_rest_for_the_last_pass():
+    clip = np.concatenate([TONE, QUIET])
+    live, typed = typer(Clips(clip), iter([]))
+
+    def fail(_):
+        raise RuntimeError("429")
+    live.transcribe = fail
+    live.run()  # returns by itself
+    assert typed == []
+    assert live.finish(clip, lambda s: "all of it") == "all of it" and typed == ["all of it"]
+
+
+def test_nothing_is_sent_while_the_held_keys_would_get_in_the_way():
+    calls = []
+    live, _ = typer(Clips(np.concatenate([TONE, QUIET])), iter([]), ready=lambda: False)
+    live.transcribe = calls.append
+    live.start()
+    time.sleep(0.5)
+    live.stop()
+    assert calls == []
+
+
+@pytest.mark.parametrize("settings", [{"post_hook": "cat"}, {"app_rules": {"slack": "clipboard"}}, {"app_rules": {"slack": "off"}}])
+def test_live_typing_stays_out_of_the_way_of_what_changes_the_text(api, settings):
+    d, _, _ = dictation(cfg_for(api, live_text=True, **settings), app="slack")
+    assert not d._types_live("")
+
+
+def test_a_dead_microphone_is_explained(api):
+    class Muted:
+        def __init__(self, on_level):
+            pass
+
+        def stop(self):
+            return np.zeros(audio.SAMPLE_RATE * 2, np.float32)
+    d, _, fb = dictation(cfg_for(api, min_hold=0), recorder=Muted)
+    d.on_action("start")
+    d.on_action("stop")
+    settle(d)
+    assert any(isinstance(e, tuple) and "microphone" in e[1] for e in fb.log)

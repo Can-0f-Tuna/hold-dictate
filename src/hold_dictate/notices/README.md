@@ -6,6 +6,7 @@ The way hold-dictate tells you something on screen: a small "!" ball that comes 
 | --- | --- | --- | --- |
 | Update | `UpdateNotice.qml` | `U <version\|->`, `D`, `F` | A "!" tab on the pill. A click installs the update, with a chip in the corner of the screen |
 | You got Premium | `PremiumNotice.qml` | `P <on\|->` | With the next dictation a ball slides out of the pill and a small character climbs out of it. The character flips to the bottom edge of the screen while the ball closes back into the pill, walks a little and asks for a click, then sinks until only its eyes show and comes out for the mouse. The click opens the Premium settings, whose controls open one by one. With no click for 30 seconds it leaves; the next dictation brings it back |
+| Problem | `ProblemNotice.qml` | `E <alert\|mic\|net>` | The pill's bars settle into a flat line and turn red, and a mark appears beside the pill: a crossed-out microphone or network sign, or a "!". After about 2.6 seconds both close; the mouse on the mark keeps them open. A click opens the settings, which explain the problem |
 
 To add one:
 

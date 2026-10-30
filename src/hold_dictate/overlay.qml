@@ -10,6 +10,7 @@
 //   S              recording started: show
 //   L <level>      loudness of the last 20 ms, 0..1
 //   T              recording finished, transcribing
+//   E <alert|mic|net>  something went wrong: the bars settle into a flat line and turn red, and a mark beside the pill says why
 //   Q              hide (with an update waiting, the "!" tab stays a few seconds so it can be clicked)
 //   P <on|->       the "you got Premium" notice: on plays it (sent before each S until it is clicked), - sends it away
 // Notices live in notices/, one file each; notices/README.md says how to add one.
@@ -39,6 +40,11 @@ ShellRoot {
     property bool active: false
     property bool transcribing: false
     property real shown: 0.0
+    property bool flat: false     // a problem is laying the bars down into a line
+    property bool frozen: false   // the line is down: nothing left to draw
+    property real redBars: 0.0    // 0..1, how far the bars have turned red
+    property double startedAt: 0  // when the pill opened, in ms
+    readonly property color problemColor: "#e5343c"
     readonly property bool updateWaiting: update.updateVersion !== ""
     property bool premiumWanted: false   // the Premium notice is on screen
     property bool premiumSeen: false     // clicked in this session: a late "P on" must not bring it back
@@ -79,6 +85,11 @@ ShellRoot {
             }
         } else if (parts[0] === "S") {
             update.dictationStarted();
+            problem.dismiss();
+            flat = false;
+            frozen = false;
+            redBars = 0;
+            startedAt = Date.now();
             transcribing = false;
             level = 0;
             envelope = 0;
@@ -88,10 +99,21 @@ ShellRoot {
         } else if (parts[0] === "T") {
             transcribing = true;
             level = 0;
-        } else if (parts[0] === "Q") {
+        } else if (parts[0] === "E") {
+            if (!active)
+                startedAt = Date.now();
+            active = true;
+            // A problem can come the moment the pill opens: let the bars move a little first.
+            problem.play(parts[1] || "alert", Math.max(0, 450 - (Date.now() - startedAt)));
+        } else if (parts[0] === "Q" && !problem.busy) {
             active = false;
             update.dictationEnded();
         }
+    }
+
+    function closeAfterProblem() {
+        active = false;
+        update.dictationEnded();
     }
 
     Process {
@@ -109,6 +131,14 @@ ShellRoot {
         }
     }
     onActiveChanged: shown = active ? 1 : 0
+    onShownChanged: {
+        if (shown === 0) {
+            flat = false;
+            frozen = false;
+            redBars = 0;
+        }
+    }
+    onRedBarsChanged: field.requestPaint()
 
     Region {
         id: noInput
@@ -117,10 +147,14 @@ ShellRoot {
         id: tabInput
         item: update.tabItem
     }
+    Region {
+        id: problemInput
+        item: problem.markItem
+    }
 
     PanelWindow {
         id: win
-        visible: root.active || root.shown > 0 || update.visibleNow
+        visible: root.active || root.shown > 0 || update.visibleNow || problem.phase !== ""
         color: "transparent"
         // A strip along the whole edge of the screen, so the update chip can travel to the corner.
         anchors.bottom: !root.atTop
@@ -129,7 +163,7 @@ ShellRoot {
         anchors.right: true
         implicitHeight: Math.ceil(48 + 80 * root.sizeScale)
         exclusionMode: ExclusionMode.Ignore
-        mask: update.tabVisible ? tabInput : noInput   // clicks pass through everything else
+        mask: problem.clickable ? problemInput : update.tabVisible ? tabInput : noInput   // clicks pass through everything else
         WlrLayershell.layer: WlrLayer.Overlay
         WlrLayershell.namespace: "hold-dictate"
 
@@ -139,8 +173,15 @@ ShellRoot {
             shell: root
         }
 
+        ProblemNotice {
+            id: problem
+            anchors.fill: parent
+            shell: root
+        }
+
         Rectangle {
             id: pill
+            z: 1
             // sized rather than scaled, so the dots stay sharp at every size
             width: 224 * root.sizeScale
             height: 56 * root.sizeScale
@@ -165,10 +206,11 @@ ShellRoot {
 
                 onPaint: {
                     const ctx = getContext("2d");
-                    const s = root.sizeScale, cell = root.cell, n = root.bars, rows = root.rows;
                     ctx.reset();
-                    ctx.scale(s, s);
-                    ctx.fillStyle = root.barColor;
+                    ctx.scale(root.sizeScale, root.sizeScale);
+                    const red = root.problemColor;
+                    ctx.fillStyle = Qt.tint(root.barColor, Qt.rgba(red.r, red.g, red.b, root.redBars)).toString();
+                    const cell = root.cell, n = root.bars, rows = root.rows;
                     if (root.lines) {
                         // 3 px bars, 3 px apart, brighter as they grow
                         const x0 = (root.fieldW - n * 6 + 3) / 2;
@@ -203,13 +245,14 @@ ShellRoot {
             }
 
             FrameAnimation {
-                running: root.shown > 0
+                running: root.shown > 0 && !root.frozen
                 onTriggered: {
                     const dt = Math.min(frameTime, 0.05);
                     const t = elapsedTime;
                     // Envelope follower: jumps up with the voice, falls back smoothly.
-                    const rate = root.level > root.envelope ? 30 : 9;
-                    root.envelope += (root.level - root.envelope) * Math.min(1, rate * dt);
+                    const level = problem.warming ? Math.max(root.level, 0.28 + 0.2 * Math.sin(t * 11)) : root.level;
+                    const rate = level > root.envelope ? 30 : 9;
+                    root.envelope += (level - root.envelope) * Math.min(1, rate * dt);
 
                     // Shift the history outwards.
                     const hist = root.history, half = hist.length - 1;
@@ -225,7 +268,9 @@ ShellRoot {
                         const syll = 0.5 + 0.5 * Math.sin(t * 1.3 - d * 0.29) * Math.sin(t * 0.47 + d * 0.11 + 1.3);
                         const rest = 0.08 * taper * (0.3 + 0.7 * syll) * seed[i] * (0.8 + 0.2 * Math.sin(t * 5.1 + i * 0.9));
                         let target;
-                        if (root.lines) {
+                        if (root.flat) {
+                            target = root.lines ? 0 : 0.035;
+                        } else if (root.lines) {
                             // the original look: flat 3 px bars at rest, no breathing
                             const ld = Math.abs(i - mid), lt = 1 - Math.pow(ld / (mid + 1), 2) * 0.55;
                             if (root.transcribing) {

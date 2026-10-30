@@ -47,6 +47,7 @@ class Feedback:
         self.events = None
         self.pending_premium = lambda: False  # the next dictation brings the "you got Premium" notice
         self.premium_sent = False
+        self.last_problem = None  # what went wrong last, for the settings page
         if pill_available():
             self.events = open(EVENTS_FILE, "w", buffering=1)
             updated = os.environ.pop("HOLD_DICTATE_UPDATED", "")
@@ -70,6 +71,9 @@ class Feedback:
             )
         except OSError:
             self.events = None
+
+    def _overlay_up(self) -> bool:
+        return bool(self.events and self.proc and self.proc.poll() is None)
 
     def _send(self, line):
         if self.events:
@@ -121,11 +125,25 @@ class Feedback:
     def done(self):
         self._send("Q")
 
-    def error(self, message: str):
-        self._send("Q")
+    def clear_problem(self):
+        self.last_problem = None
+
+    def error(self, message: str, brief: str = "", icon: str = "alert"):
+        """The pill's bars lie flat and turn red, with a mark beside them; its click opens the settings, which
+        explain with `brief`, or else the message. The log always gets the message."""
         self._beep("error")
         print(f"hold-dictate: {message}", file=sys.stderr, flush=True)
-        self.notify(message)
+        shown = " ".join((brief or message).split())
+        shown = shown[:1].upper() + shown[1:]
+        self.last_problem = {"brief": shown, "detail": "" if message.lower() == shown.lower() else message}
+        if self._overlay_up():
+            if self.cfg:
+                self._send_look()
+            self._send(f"E {icon}")
+        else:
+            if self.events:
+                self._ensure_overlay()
+            self.notify(shown)
 
     def notify(self, message: str):
         try:

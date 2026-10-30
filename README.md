@@ -32,6 +32,7 @@ A local page at `http://127.0.0.1:47811` that only this computer can open. Open 
 - speech service and API key (with a check that the key works)
 - the model: Automatic uses the one we recommend for that service; **Choose another** lets you pick one
 - the languages you speak (pick as many as you like, for example Hebrew and English), the hotkey (press the keys to record it), and how it works: **hold** to talk (the default), **tap or hold** (a quick tap starts, the next tap stops; holding longer works like hold) or **tap to start and stop**. In the tap modes it can stop by itself after a few seconds of quiet
+- when the text is typed: all at once when you finish (the default), or as you speak, into the text box you are in, in steps of a few seconds. Typed words can't be corrected, so it can be a little less accurate. It sends a short request every few seconds, which counts toward your speech service's limits. On Windows and macOS, while the shortcut is held, the text waits until you let go. It is not used with writing that fits the app, a text hook, or the copy-only and do-nothing app rules
 - what happens to music and videos while you dictate: turned down (the default), silenced, or left alone
 - sounds, and the recording pill: style (Dots, the default, or the original Lines), colour, position and size
 - automatic updates
@@ -50,7 +51,7 @@ Changes apply immediately; no restart needed. Prefer the terminal? `hold-dictate
 hold-dictate checks GitHub every 10 minutes and, while you are not dictating, installs a newer release and restarts itself. Turn this off in the settings. When an update is waiting (automatic updates off, or the install failed), the recording pill on Linux shows a small **!** tab; click it to install, or run `hold-dictate update`. Releases are made by pushing a tag that matches `__version__` in `src/hold_dictate/__init__.py`:
 
 ```sh
-git tag v0.7.3 && git push origin v0.7.3
+git tag v0.8.0 && git push origin v0.8.0
 ```
 
 The Release workflow runs the tests and publishes the GitHub release. Installed copies pick it up within 10 minutes.
@@ -82,7 +83,7 @@ If the cloud request fails and the `local` extra is installed, it falls back to 
 | `hold-dictate copy-last` | Copies the last dictation to the clipboard (also in the tray menu) |
 | `hold-dictate config` | Prints the config file path |
 
-Settings live in a TOML file: `~/.config/hold-dictate/config.toml` (Linux), `~/Library/Application Support/hold-dictate/config.toml` (macOS), `%APPDATA%\hold-dictate\config.toml` (Windows). Options: `provider`, `api_key`, `base_url`, `model`, `languages` (comma-separated codes such as `"he,en"`; empty means any language), `prompt`, `hotkey`, `hotkey_mode` (`hold`, `auto` or `toggle`), `silence_stop` (seconds, 0 = off), `local_model`, `local_fallback`, `beeps`, `background_audio` (`lower`, `mute` or `off`), `min_hold`, `timeout`, `auto_update`, `overlay_bg`, `overlay_bars`, `overlay_position`, `overlay_size`, `drop_hallucinations`, `remove_fillers`, `filler_words` (comma-separated, empty = built-in), `spoken_punctuation`, `word_overrides` (a table: `{ "get hub" = "GitHub" }`), `auto_submit`, `app_rules` (a table: `{ "slack" = "submit", "keepassxc" = "off" }`; values `paste`, `submit`, `shift`, `clipboard`, `off`; a name matches part of the app name), `post_hook`, and for Premium `edit_hotkey` (empty = off), `premium_style`, `premium_learn`, `learned_terms`, `learned_fixes`.
+Settings live in a TOML file: `~/.config/hold-dictate/config.toml` (Linux), `~/Library/Application Support/hold-dictate/config.toml` (macOS), `%APPDATA%\hold-dictate\config.toml` (Windows). Options: `provider`, `api_key`, `base_url`, `model`, `languages` (comma-separated codes such as `"he,en"`; empty means any language), `prompt`, `hotkey`, `hotkey_mode` (`hold`, `auto` or `toggle`), `silence_stop` (seconds, 0 = off), `live_text`, `local_model`, `local_fallback`, `beeps`, `background_audio` (`lower`, `mute` or `off`), `min_hold`, `timeout`, `auto_update`, `overlay_bg`, `overlay_bars`, `overlay_position`, `overlay_size`, `drop_hallucinations`, `remove_fillers`, `filler_words` (comma-separated, empty = built-in), `spoken_punctuation`, `word_overrides` (a table: `{ "get hub" = "GitHub" }`), `auto_submit`, `app_rules` (a table: `{ "slack" = "submit", "keepassxc" = "off" }`; values `paste`, `submit`, `shift`, `clipboard`, `off`; a name matches part of the app name), `post_hook`, and for Premium `edit_hotkey` (empty = off), `premium_style`, `premium_learn`, `learned_terms`, `learned_fixes`.
 
 The app is told apart by its window class on X11, Hyprland, Sway and niri, by its name on macOS and its program name on Windows. GNOME and KDE on Wayland do not say which window is focused, so per-app rules do not apply there.
 
@@ -92,7 +93,7 @@ Hotkey format: modifiers (`alt`, `ctrl`, `shift`, `super`) plus one key (`space`
 
 - **macOS**: allow Microphone and Accessibility / Input Monitoring when prompted. `alt` is the Option key.
 - **Windows**: Alt+Space normally opens the window menu. hold-dictate hides that press while you dictate.
-- **Linux**: the keyboard is read through `/dev/input`, so your user must be in the `input` group. The installer does this; log out and in once. Pasting uses `wl-clipboard` + `wtype` (Wayland) or `xclip` + `xdotool` (X11). GNOME on Wayland does not accept `wtype`; install `ydotool`, or the text is left on the clipboard for you to paste. On Wayland, bind Alt+Space to a no-op in your compositor so a stray space isn't typed (niri: `Alt+Space repeat=false { spawn "true"; }`). A recording pill is shown if [quickshell](https://quickshell.org) is installed; other setups use short beeps. The pill is Linux-only for now; Windows and macOS use the beeps.
+- **Linux**: the keyboard is read through `/dev/input`, so your user must be in the `input` group. The installer does this; log out and in once. Pasting uses `wl-clipboard` + `wtype` (Wayland) or `xclip` + `xdotool` (X11). GNOME on Wayland does not accept `wtype`; install `ydotool`, or the text is left on the clipboard for you to paste. On Wayland, bind Alt+Space to a no-op in your compositor so a stray space isn't typed (niri: `Alt+Space repeat=false { spawn "true"; }`). A recording pill is shown if [quickshell](https://quickshell.org) is installed; other setups use short beeps. When something goes wrong the pill's bars settle into a flat line and turn red, and a mark appears beside it for a moment: a crossed-out microphone or network sign, or a "!". A click opens the settings, which explain it. Without the pill you get a desktop notification. The pill is Linux-only for now; Windows and macOS use the beeps.
 
 ## Status
 

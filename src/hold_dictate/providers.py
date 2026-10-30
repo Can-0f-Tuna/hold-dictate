@@ -3,9 +3,10 @@ import json
 import re
 import urllib.error
 import urllib.request
+import threading
 import uuid
 
-from .audio import SAMPLE_RATE, wav_bytes
+from .audio import SAMPLE_RATE, Problem, wav_bytes
 from .config import HEBREW_PROMPT, LANGUAGE_NAMES, LANGUAGES, Config
 
 SAMPLES = {code: sentence for code, _, sentence in LANGUAGES if sentence}
@@ -14,7 +15,7 @@ SAMPLES = {code: sentence for code, _, sentence in LANGUAGES if sentence}
 PROMPT_BYTES = 600
 
 
-class TranscribeError(RuntimeError):
+class TranscribeError(Problem):
     pass
 
 
@@ -29,6 +30,16 @@ def multipart(fields: dict, filename: str, content: bytes, content_type: str):
         f"Content-Type: {content_type}\r\n\r\n"
     ).encode() + content + f"\r\n--{boundary}--\r\n".encode()
     return body, f"multipart/form-data; boundary={boundary}"
+
+
+def _brief_http_error(cfg: Config, code: int) -> str:
+    label = cfg.preset()["label"]
+    return {
+        401: "The API key was rejected. Enter it again in the settings.",
+        403: "This API key isn't allowed to use speech-to-text.",
+        404: "The speech service doesn't know this model. Check the settings.",
+        429: f"Too many requests to {label}. Wait a minute and try again.",
+    }.get(code, f"{label} had a problem (error {code}). Try again.")
 
 
 def _explain_http_error(cfg: Config, e: urllib.error.HTTPError) -> str:
@@ -124,9 +135,9 @@ def _request(cfg: Config, audio, language: str, prompt: str, response_format: st
             data = json.load(response)
             return data["text"].strip(), str(data.get("language") or "")
     except urllib.error.HTTPError as e:
-        raise TranscribeError(_explain_http_error(cfg, e)) from e
+        raise TranscribeError(_explain_http_error(cfg, e), _brief_http_error(cfg, e.code)) from e
     except (urllib.error.URLError, TimeoutError, OSError) as e:
-        raise TranscribeError(f"could not reach {base}: {e}") from e
+        raise TranscribeError(f"could not reach {base}: {e}", f"Can't reach {cfg.preset()['label']}. Check your internet connection.", "net") from e
 
 
 def check_api(cfg: Config) -> str:
@@ -155,6 +166,7 @@ class LocalTranscriber:
         self.cfg = cfg
         self.model = None
         self.loaded = ""  # name of the model in memory, so a change in the settings loads the new one
+        self.lock = threading.Lock()  # the live words and the final text can ask at the same time
 
     @staticmethod
     def available() -> bool:
@@ -173,7 +185,8 @@ class LocalTranscriber:
             except ImportError as e:
                 raise TranscribeError(
                     "local transcription is not installed. Reinstall with the `local` extra: "
-                    'uv tool install "hold-dictate[local]"'
+                    'uv tool install "hold-dictate[local]"',
+                    "Local transcription isn't installed. Pick another service in the settings.",
                 ) from e
             import os
             self.model = WhisperModel(
@@ -186,6 +199,10 @@ class LocalTranscriber:
         self.model = None
 
     def transcribe(self, audio) -> str:
+        with self.lock:
+            return self._transcribe(audio)
+
+    def _transcribe(self, audio) -> str:
         model, (force, prompt), codes = self.load(), language_hints(self.cfg), self.cfg.language_codes()
         run = lambda language: model.transcribe(
             audio, language=language or None, beam_size=5, vad_filter=False, initial_prompt=prompt or None,

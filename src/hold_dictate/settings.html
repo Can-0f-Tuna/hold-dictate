@@ -259,6 +259,8 @@ details .items { margin-top:var(--s-6); }
 </div>
 <div class="banner err" id="stale" hidden><span>This page belongs to an earlier run of hold-dictate and can't save any more. Open the settings again <span id="reopenWhere">from the hold-dictate icon</span>, or run <code>hold-dictate settings</code>.</span></div>
 
+<div class="banner err" id="lastProblem" role="alert" hidden><span><b id="lastProblemBrief"></b><span class="hint" id="lastProblemDetail"></span></span><button class="btn" id="lastProblemClear">Dismiss</button></div>
+
 <section class="hero" aria-label="Status">
   <div class="status" id="status"><i></i><span id="statusText"></span></div>
   <div id="readyView">
@@ -329,6 +331,11 @@ details .items { margin-top:var(--s-6); }
       <p class="hint" id="modeHint"></p>
     </div>
     <div class="row" id="silenceRow"><label class="text" for="silence_stop"><b>Stop after silence</b><span class="hint" id="silenceHint"></span></label><input type="number" id="silence_stop" min="0" max="60" step="0.5"></div>
+    <div class="item">
+      <span class="label" id="l-typing">When the text is typed</span>
+      <div><div class="seg" id="live_text" role="group" aria-labelledby="l-typing"><button data-v="end">When you finish</button><button data-v="live">As you speak</button></div></div>
+      <p class="hint" id="liveHint"></p>
+    </div>
     <div class="item">
       <span class="label" id="l-bg">Music and videos</span>
       <div><div class="seg" id="background_audio" role="group" aria-labelledby="l-bg"><button data-v="lower">Turn down</button><button data-v="mute">Silence</button><button data-v="off">Leave as is</button></div></div>
@@ -537,6 +544,12 @@ const where = s => s.platform.startsWith('linux') ? 'from your app menu (hold-di
 // What stops dictation from working, most basic first. null when it is ready.
 let reachable = true, retryTimer = 0;
 function retry() { if (!retryTimer) retryTimer = setTimeout(() => { retryTimer = 0; refresh(); }, 3000); }
+function showProblem(p) {
+  $('lastProblem').hidden = !p;
+  if (!p) return;
+  $('lastProblemBrief').textContent = p.brief;
+  $('lastProblemDetail').textContent = p.detail ? ' ' + p.detail : '';
+}
 function blocker(s) {
   const c = s.config, service = ((s.providers[c.provider] || {}).label || '').replace(/ \(.*/, '');
   if (!reachable) return { title: 'Can\'t reach hold-dictate.', lede: `It may have quit, or it's restarting after an update. Start it again ${where(s)}.${s.running ? ' This page reconnects when it is back.' : ''}` };
@@ -652,7 +665,12 @@ function render(s) {
     : c.background_audio === 'off' ? 'Other apps keep playing as usual.'
     : s.platform === 'darwin' ? `Spotify and Music get ${c.background_audio === 'mute' ? 'silent' : 'quieter'} while you record, and come back when you stop. macOS can't change other apps' volume.`
     : `Other apps get ${c.background_audio === 'mute' ? 'silent' : 'quieter'} while you record, and come back when you stop. Headphones and Bluetooth stay as they are: the microphone can't hear them.`;
+  showProblem(s.last_problem);
   $('beeps').checked = c.beeps;
+  document.querySelectorAll('#live_text button').forEach(b => b.setAttribute('aria-pressed', String((b.dataset.v === 'live') === c.live_text)));
+  $('liveHint').textContent = c.live_text
+    ? "The words appear in the text box you are in while you talk, in steps of a few seconds. Words can't be corrected once typed, so it can be a little less accurate. Each step is a request to your speech service, which counts toward its limits. Not used when writing that fits the app or a text hook is on."
+    : 'All the text is pasted at once when you finish. The most accurate way.';
   $('lookGroup').hidden = !s.overlay;
   $('overlay_bg').value = c.overlay_bg; $('overlay_bars').value = c.overlay_bars;
   for (const id of ['overlay_style', 'overlay_position']) document.querySelectorAll(`#${id} button`).forEach(b => b.setAttribute('aria-pressed', String(b.dataset.v === c[id])));
@@ -778,6 +796,7 @@ for (const id of ['base_url', 'model', 'prompt', 'post_hook']) {
 for (const id of ['min_hold', 'timeout', 'silence_stop']) $(id).addEventListener('change', () => save({ [id]: parseFloat($(id).value) }));
 for (const id of ['beeps', 'auto_update', 'local_fallback', 'drop_hallucinations', 'remove_fillers', 'spoken_punctuation', 'auto_submit']) $(id).addEventListener('change', () => save({ [id]: $(id).checked }));
 for (const id of ['hotkey_mode', 'background_audio', 'overlay_style', 'overlay_position']) document.querySelectorAll(`#${id} button`).forEach(b => b.onclick = () => save({ [id]: b.dataset.v }));
+document.querySelectorAll('#live_text button').forEach(b => b.onclick = () => save({ live_text: b.dataset.v === 'live' }));
 
 // ---- shortcut recorder ----
 // Two shortcuts use it: the hero's (hotkey) and Edit by voice's (edit_hotkey).
@@ -1142,6 +1161,7 @@ addEventListener('resize', () => drawWave(performance.now()));
 // ---- start ----
 addEventListener('scroll', floatSave, { passive: true });
 saveState('idle');
+$('lastProblemClear').onclick = () => api('/api/problem/clear', {}).then(() => showProblem(null)).catch(() => {});
 const refresh = () => api('/api/state').then(s => { S = s; render(s); if ($('save').classList.contains('failed')) saveState('idle'); }).catch(() => {}); // the hero and the stale banner already say what went wrong
 if (S) render(S); else refresh();
 // Premium may have been turned on (or the account blocked) since the last check

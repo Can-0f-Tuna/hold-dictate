@@ -40,3 +40,32 @@ def test_the_premium_notice_comes_with_the_next_dictation_until_it_is_clicked(mo
     fb.premium_gone()
     fb.premium_gone()
     assert fb.events.lines.count("P -") == 1
+
+
+def pill():
+    fb = feedback.Feedback.__new__(feedback.Feedback)
+    fb.cfg, fb.events = None, Lines()
+    fb.proc = type("P", (), {"poll": lambda self: None})()
+    return fb
+
+
+def test_a_problem_marks_the_pill_and_keeps_the_explanation_for_the_settings(monkeypatch):
+    fb, notified = pill(), []
+    monkeypatch.setattr(fb, "notify", notified.append)
+    fb.error("Groq returned 401: long detail", "The API key was rejected.")
+    assert fb.events.lines == ["E alert"]
+    assert fb.last_problem == {"brief": "The API key was rejected.", "detail": "Groq returned 401: long detail"}
+    fb.error("no microphone", icon="mic")
+    assert fb.events.lines[-1] == "E mic"
+    assert fb.last_problem == {"brief": "No microphone", "detail": ""}
+    assert notified == []
+    fb.clear_problem()
+    assert fb.last_problem is None
+
+
+def test_without_the_pill_a_problem_is_a_notification(monkeypatch):
+    fb, notified = pill(), []
+    fb.proc, fb.events = None, None
+    monkeypatch.setattr(fb, "notify", notified.append)
+    fb.error("no API key yet.")
+    assert notified == ["No API key yet."]

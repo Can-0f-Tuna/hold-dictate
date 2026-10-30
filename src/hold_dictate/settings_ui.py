@@ -143,6 +143,7 @@ class SettingsServer:
             "running": self.daemon,
             "problem": self.problem,
             "hotkey_problem": self.hotkey_problem,
+            "last_problem": getattr(getattr(session, "fb", None), "last_problem", None),
             "config": values,
             "premium": {"groq_key": bool(groq_key(cfg)), "terms": terms_of(cfg.learned_terms)},
             "key_hint": f"…{key[-4:]}" if len(key) >= 8 else ("set" if key else ""),
@@ -269,6 +270,11 @@ class SettingsServer:
         note = self.session.copy_last() if action == "copy" else self.session.paste_last()
         return {"message": note or ""}
 
+    def clear_problem(self) -> dict:
+        if self.session:
+            self.session.fb.clear_problem()
+        return self.state()
+
     def update(self, action: str) -> dict:
         if not self.updater:
             return self.state()
@@ -351,6 +357,7 @@ class _Handler(BaseHTTPRequestHandler):
                 "/api/service": self.app.start_service,
                 "/api/update/check": lambda: self.app.update("check"),
                 "/api/update/install": lambda: self.app.update("install"),
+                "/api/problem/clear": self.app.clear_problem,
                 "/api/last/copy": lambda: self.app.last("copy"),
                 "/api/last/paste": lambda: self.app.last("paste"),
                 "/api/account/signin": self.app.sign_in,

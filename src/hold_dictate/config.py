@@ -157,6 +157,7 @@ class Config:
     edit_hotkey: str = "alt+shift+space"  # Premium: hold it over selected text and say what to change; empty = off
     hotkey_mode: str = "hold"  # hold | auto | toggle
     silence_stop: float = 0.0  # auto and toggle: stop after this many seconds of quiet once you spoke; 0 = off
+    live_text: bool = False  # type into the focused text box while you speak; uses extra requests
     local_model: str = "small"  # faster-whisper model name or Hugging Face repo; "small" is Automatic
     local_fallback: bool = True  # use the local model when the cloud request fails (if installed)
     beeps: bool = field(default_factory=lambda: not pill_available())  # short sounds on start, stop and error; off where the pill shows it

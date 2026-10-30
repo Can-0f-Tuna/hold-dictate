@@ -9,6 +9,7 @@ from .ducking import Ducker
 from .config import Config
 from .feedback import Feedback
 from .hotkey import HoldDetector, choose_backend, parse_hotkey
+from .live import LiveTyper
 from .providers import LocalTranscriber, TranscribeError, transcribe_api
 
 
@@ -51,6 +52,8 @@ class Dictation:
         self.which = ""  # what the recording is for: "" dictation, "edit" edit by voice
         self.watch = ""  # the last pasted dictation, compared once with the clipboard to spot your corrections
         self.recorder = None
+        self.live = None  # types while you speak, when turned on
+        self.live_app = ""
         self.latched = False  # auto and toggle: the key is up but the recording goes on
         self.voice = audio.VoiceMeter()
         self.pressed_at = 0.0
@@ -113,12 +116,17 @@ class Dictation:
         try:
             self.recorder = self.recorder_factory(self._level)
         except audio.MicError as e:
-            self.fb.error(str(e))
+            self.fb.error(str(e), e.brief, e.icon)
             return
         self.latched, self.which = False, which
         self.fb.recording()
         self.ducker.duck()
         self.pressed_at = self.last_used = time.monotonic()
+        if self._types_live(which):
+            self.live = LiveTyper(self.recorder, self._transcribe_live, lambda raw: textproc.clean(raw, self.cfg), self._type_live,
+                                  ready=lambda: sys.platform.startswith("linux") or self.latched,
+                                  gap=1.0 if self.cfg.provider == "local" else LiveTyper.GAP)
+            self.live.start()
         if self.cfg.hotkey_mode != "hold" and self.cfg.silence_stop > 0:
             threading.Thread(target=self._watch_silence, args=(self.recorder,), daemon=True).start()
 
@@ -141,18 +149,74 @@ class Dictation:
         with self.lock:
             if self.recorder is None:
                 return
+            live, self.live = self.live, None
             recording, self.recorder, self.latched = self.recorder.stop(), None, False
             self.ducker.restore()
             if time.monotonic() - self.pressed_at < self.cfg.min_hold:
+                if live:
+                    live.stop()
                 self.fb.done()
                 return
             self.fb.working()
-            worker = threading.Thread(target=self.process_edit if self.which == "edit" else self.process, args=(recording,), daemon=True)
+            work = self.process_edit if self.which == "edit" else (lambda r: self.process_live(r, live)) if live else self.process
+            worker = threading.Thread(target=work, args=(recording,), daemon=True)
             worker.start()
             self.threads.append(worker)
 
     def transcribe(self, speech) -> tuple[str, str]:
         return transcribe(self.cfg, self.local, speech)
+
+    def _transcribe_live(self, speech) -> str:
+        """No fallback here: if a request fails, typing waits for the last pass, which has it."""
+        return self.local.transcribe(speech) if self.cfg.provider == "local" else transcribe_api(self.cfg, speech)
+
+    def _types_live(self, which: str) -> bool:
+        """Live typing needs text that is final as it is spoken, and a place to type it. Anything that changes the
+        whole text afterwards, or keeps it out of the app, gets the normal paste at the end."""
+        if which or not self.cfg.live_text or self.cfg.post_hook.strip():
+            return False
+        if self.cfg.premium_style and not self.premium.problem():
+            return False
+        self.live_app = self.focus()
+        return paste.rule_for(self.cfg.app_rules, self.live_app) not in ("off", "clipboard")
+
+    def _type_live(self, text: str) -> str:
+        rule = paste.rule_for(self.cfg.app_rules, self.live_app)
+        with self.paste_lock:
+            return self.paster(text, app=self.live_app, shift={"shift": True, "paste": False}.get(rule), submit=False)
+
+    def process_live(self, recording, live):
+        """The end of a recording typed live: the rest of the words, then what a paste would have done."""
+        started, app = time.monotonic(), self.live_app
+        try:
+            text = live.finish(recording, lambda speech: self.transcribe(speech)[0])
+        except Exception as e:
+            self._fail(e)
+            return
+        self.last_used = time.monotonic()
+        print(f"typed live, the end took {self.last_used - started:.1f}s: {text!r}", flush=True)
+        if text:
+            self.last_text, self.last_app = text, app
+        if live.note:
+            self.copier(text)
+            self.fb.error(live.note)
+            return
+        if not text and audio.is_dead(recording):
+            self.fb.error("The microphone is silent. Check that it isn't muted.", icon="mic")
+            return
+        self.fb.done()
+        if not text:
+            return
+        self.fb.clear_problem()
+        rule = paste.rule_for(self.cfg.app_rules, app)
+        if rule == "submit" or (self.cfg.auto_submit and rule != "paste"):
+            paste.press_enter()
+        if self.learner.enabled():
+            self.watch = text
+            self.learner.add(text)
+
+    def _fail(self, e: Exception):
+        self.fb.error(str(e), getattr(e, "brief", ""), getattr(e, "icon", "alert"))
 
     def process(self, recording):
         started = time.monotonic()
@@ -160,7 +224,10 @@ class Dictation:
             speech = audio.speech_only(recording)
             raw, source = ("", "-") if speech is None else self.transcribe(speech)
         except Exception as e:
-            self.fb.error(str(e))
+            self._fail(e)
+            return
+        if speech is None and audio.is_dead(recording):
+            self.fb.error("The microphone is silent. Check that it isn't muted.", icon="mic")
             return
         self.last_used = time.monotonic()
         text = textproc.clean(raw, self.cfg)
@@ -218,7 +285,7 @@ class Dictation:
                 raise premiummod.PremiumError("The server sent back no text, so the selection is left as it was.")
         except Exception as e:
             restore()
-            self.fb.error(str(e))
+            self._fail(e)
             return
         self.last_used = time.monotonic()
         print(f"edited by voice ({source}) in {self.last_used - started:.1f}s", flush=True)  # never the text
@@ -264,7 +331,9 @@ class Dictation:
             with self.paste_lock:
                 note = self.paster(text, app=app, shift=shift, submit=submit)
         if note:
-            self.fb.notify(note)
+            self.fb.error(note)
+        else:
+            self.fb.clear_problem()
 
     def paste_last(self) -> str:
         """Pastes the last dictation again into the focused app (never presses Enter)."""
