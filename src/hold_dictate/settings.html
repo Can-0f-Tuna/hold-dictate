@@ -1109,7 +1109,7 @@ addEventListener('scroll', floatSave, { passive: true });
 saveState('idle');
 const refresh = () => api('/api/state').then(s => { S = s; render(s); if ($('save').classList.contains('failed')) saveState('idle'); }).catch(() => {}); // the hero and the stale banner already say what went wrong
 if (S) render(S); else refresh();
-// Premium may have been turned on (or the account blocked) since the last daily check
+// Premium may have been turned on (or the account blocked) since the last check
 if (S && S.account) api('/api/account/check', {}).then(s => { S = s; render(s); }).catch(() => {});
 window.addEventListener('focus', () => { if (!recording && !document.activeElement.matches('input[type=text], input[type=password], input[type=number]')) refresh(); });
 </script>

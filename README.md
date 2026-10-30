@@ -28,7 +28,7 @@ Manual install: `uv tool install git+https://github.com/Can-0f-Tuna/hold-dictate
 
 A local page at `http://127.0.0.1:47811` that only this computer can open. Open it from the tray icon next to the clock (Windows), the menu-bar icon (macOS), **hold-dictate settings** in the app menu (Linux), or `hold-dictate settings`. It sets:
 
-- your account: hold-dictate needs a free account, so the page asks you to sign in with Google first, and dictation and the settings stay off until you do. The app then checks the account with the hold-dictate server about once a day; it sends nothing else
+- your account: hold-dictate needs a free account, so the page asks you to sign in with Google first, and dictation and the settings stay off until you do. The app then checks the account with the hold-dictate server about every 10 minutes; it sends nothing else
 - speech service and API key (with a check that the key works)
 - the model: Automatic uses the one we recommend for that service; **Choose another** lets you pick one
 - the languages you speak (pick as many as you like, for example Hebrew and English), the hotkey (press the keys to record it), and how it works: **hold** to talk (the default), **tap or hold** (a quick tap starts, the next tap stops; holding longer works like hold) or **tap to start and stop**. In the tap modes it can stop by itself after a few seconds of quiet
@@ -50,7 +50,7 @@ Changes apply immediately; no restart needed. Prefer the terminal? `hold-dictate
 hold-dictate checks GitHub every 10 minutes and, while you are not dictating, installs a newer release and restarts itself. Turn this off in the settings. When an update is waiting (automatic updates off, or the install failed), the recording pill on Linux shows a small **!** tab; click it to install, or run `hold-dictate update`. Releases are made by pushing a tag that matches `__version__` in `src/hold_dictate/__init__.py`:
 
 ```sh
-git tag v0.7.0 && git push origin v0.7.0
+git tag v0.7.1 && git push origin v0.7.1
 ```
 
 The Release workflow runs the tests and publishes the GitHub release. Installed copies pick it up within 10 minutes.

@@ -1,5 +1,5 @@
 """Your hold-dictate account. You sign in with Google once on the settings page; after that the app asks
-the server about once a day whether the account is still there and whether Premium is on.
+the server about every 10 minutes whether the account is still there and whether Premium is on.
 
 Signing in: the settings page opens <site>/api/auth/start with this server's port and a random state. After
 Google, the site sends the browser back to http://127.0.0.1:<port>/auth with a one-time code, which is
@@ -19,7 +19,7 @@ from pathlib import Path
 from . import __version__, config as cfgmod
 
 SITE = os.environ.get("HOLD_DICTATE_SITE", "https://hold-dictate.vercel.app").rstrip("/")
-CHECK_EVERY = 24 * 3600  # seconds between checks with the server while the app runs
+CHECK_EVERY = 10 * 60  # seconds between checks with the server while the app runs
 STATE_SECONDS = 10 * 60  # how long a started sign-in may take
 
 
@@ -144,7 +144,7 @@ class Account:
         return True
 
     def tick(self):
-        """Called often by the app; checks in the background about once a day."""
+        """Called often by the app; checks in the background about every 10 minutes."""
         if self.checking:
             return
         data = self.data()
