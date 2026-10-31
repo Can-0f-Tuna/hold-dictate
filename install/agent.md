@@ -29,7 +29,7 @@ hold-dictate is voice typing for the whole computer: hold Alt+Space, speak, let 
    It should print roughly the same sentence. If no speech tool is available, skip this step and say so.
 
 5. Test the real thing with me
-   Ask me to click into any text field, hold Alt+Space, say a sentence, and let go. A small pill shows at the bottom of the screen while it listens (on Linux with Wayland and quickshell; elsewhere there's a short sound). The text should appear about a second later. Ask me whether it worked.
+   Ask me to click into any text field, hold Alt+Space, say a sentence, and let go. A small pill shows at the bottom of the screen while it listens (on macOS, and on Linux with Wayland and quickshell; elsewhere there's a short sound). The text should appear about a second later. Ask me whether it worked.
 
 6. If something fails that you can't fix
    Report it so the maintainers can fix it:

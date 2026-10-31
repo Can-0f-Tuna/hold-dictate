@@ -361,6 +361,7 @@ details .items { margin-top:var(--s-6); }
 <section class="group" id="lookGroup" aria-labelledby="h-look">
   <header><h2 id="h-look">Recording pill</h2><p>The small window that shows while you speak.</p></header>
   <div class="items">
+    <label class="row" id="pillRow" hidden><span class="text"><b>Show the recording pill</b><span class="hint" id="pillHint"></span></span><input type="checkbox" class="switch" id="desktop_indicator"></label>
     <div class="stage" id="stage"><div class="pill" id="pill"></div></div>
     <div class="item"><span class="label" id="l-style">Style</span>
       <div><div class="seg" id="overlay_style" role="group" aria-labelledby="l-style"><button data-v="dots">Dots</button><button data-v="lines">Lines</button></div></div>
@@ -550,7 +551,9 @@ function render(s) {
   $('liveHint').textContent = c.live_text
     ? liveOff || "The words appear in the text box you are in while you talk, a few at a time. Words can't be corrected once typed, so it can be a little less accurate. Each step is a request to your speech service, which counts toward its limits."
     : 'All the text is pasted at once when you finish. The most accurate way.';
-  $('lookGroup').hidden = !s.overlay;
+  $('pillRow').hidden = s.platform.startsWith('linux');
+  $('desktop_indicator').checked = c.desktop_indicator;
+  $('pillHint').textContent = s.platform === 'win32' ? 'Not yet tried on a real Windows machine, so it is off unless you turn it on.' : 'It never takes the keyboard, and clicks go through it.';
   $('overlay_bg').value = c.overlay_bg; $('overlay_bars').value = c.overlay_bars;
   for (const id of ['overlay_style', 'overlay_position']) document.querySelectorAll(`#${id} button`).forEach(b => b.setAttribute('aria-pressed', String(b.dataset.v === c[id])));
   document.querySelectorAll('#swatches button').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.v === c.overlay_bars.toLowerCase())));
@@ -674,7 +677,7 @@ for (const id of ['base_url', 'model', 'prompt', 'post_hook']) {
   $(id).addEventListener('change', () => { clearTimeout(debounced[id]); save({ [id]: $(id).value }); });
 }
 for (const id of ['min_hold', 'timeout', 'silence_stop']) $(id).addEventListener('change', () => save({ [id]: parseFloat($(id).value) }));
-for (const id of ['beeps', 'auto_update', 'local_fallback', 'drop_hallucinations', 'remove_fillers', 'spoken_punctuation', 'auto_submit']) $(id).addEventListener('change', () => save({ [id]: $(id).checked }));
+for (const id of ['beeps', 'desktop_indicator', 'auto_update', 'local_fallback', 'drop_hallucinations', 'remove_fillers', 'spoken_punctuation', 'auto_submit']) $(id).addEventListener('change', () => save({ [id]: $(id).checked }));
 for (const id of ['hotkey_mode', 'background_audio', 'overlay_style', 'overlay_position']) document.querySelectorAll(`#${id} button`).forEach(b => b.onclick = () => save({ [id]: b.dataset.v }));
 document.querySelectorAll('#live_text button').forEach(b => b.onclick = () => save({ live_text: b.dataset.v === 'live' }));
 

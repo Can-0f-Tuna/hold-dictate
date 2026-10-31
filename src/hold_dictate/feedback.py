@@ -1,4 +1,4 @@
-"""What the user sees and hears while dictating: the Linux overlay pill, beeps, notifications."""
+"""What the user sees and hears while dictating: the recording pill, beeps, notifications."""
 import os
 import shutil
 import subprocess
@@ -8,7 +8,7 @@ from pathlib import Path
 
 import numpy as np
 
-from . import extensions
+from . import extensions, indicator
 from .audio import SAMPLE_RATE
 from .config import pill_available
 
@@ -41,6 +41,8 @@ TONES = {"start": _tone([660]), "stop": _tone([520]), "error": _tone([300, 220],
 
 
 class Feedback:
+    indicator = None  # the pill on macOS and Windows, which is a helper process
+
     def __init__(self, cfg=None):
         self.cfg = cfg  # read on every use, so changes from the settings page apply at once
         self.pending_update = lambda: ""  # version waiting to be installed; the pill shows a "!" tab
@@ -59,6 +61,8 @@ class Feedback:
                 self.send("D")
                 keep = self.proc.pid
                 threading.Timer(5, lambda: _stop_stale_overlays(keep)).start()
+        elif cfg and indicator.supported():
+            self.indicator = indicator.Indicator(cfg)
 
     def _ensure_overlay(self):
         if self.proc and self.proc.poll() is None:
@@ -78,6 +82,8 @@ class Feedback:
     def send(self, line):
         if self.events:
             self.events.write(line + "\n")
+        elif self.indicator:
+            self.indicator.send(line)
 
     def _send_look(self):
         c = self.cfg
@@ -136,6 +142,9 @@ class Feedback:
         else:
             if self.events:
                 self._ensure_overlay()
+            if self.indicator:  # it takes no clicks, so the notification still says what happened
+                self._send_look()
+                self.send(f"E {icon}")
             self.notify(shown)
 
     def notify(self, message: str):

@@ -142,7 +142,6 @@ class SettingsServer:
             "local_models": LOCAL_MODELS,
             "languages": [[code, name] for code, name, _ in LANGUAGES],
             "local_installed": importlib.util.find_spec("faster_whisper") is not None,
-            "overlay": sys.platform.startswith("linux"),
             "ducking": ducking.available(),
             "update": {
                 "latest": updater.latest if updater else "",
