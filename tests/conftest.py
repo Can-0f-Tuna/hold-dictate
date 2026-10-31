@@ -61,6 +61,12 @@ def no_real_ducking(monkeypatch):
 
 
 @pytest.fixture(autouse=True)
+def no_real_indicator(monkeypatch):
+    """Tests must never open the pill on the machine running them."""
+    monkeypatch.setattr("hold_dictate.indicator.supported", lambda: False)
+
+
+@pytest.fixture(autouse=True)
 def no_extensions(monkeypatch):
     """These tests are about hold-dictate alone, whatever else is installed next to it."""
     monkeypatch.setattr("hold_dictate.extensions._loaded", [])

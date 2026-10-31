@@ -20,6 +20,8 @@ dependencies = [
     # tray / menu-bar icon
     "pystray>=0.19; sys_platform != 'linux'",
     "Pillow>=10; sys_platform != 'linux'",
+    # the recording pill's window; pystray and pynput already install it
+    "pyobjc-framework-Cocoa>=9; sys_platform == 'darwin'",
 ]
 
 [project.optional-dependencies]

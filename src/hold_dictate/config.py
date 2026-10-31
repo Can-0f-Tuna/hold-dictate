@@ -168,8 +168,10 @@ class Config:
     timeout: float = 15.0  # seconds before a cloud request is given up
     idle_unload_seconds: float = 900.0  # free the local model after this long unused
     auto_update: bool = True  # install new releases from GitHub (checked every 10 minutes), while idle
+    # The recording pill on macOS and Windows. Off on Windows until it has been tried on a real machine.
+    desktop_indicator: bool = field(default_factory=lambda: sys.platform == "darwin")
     overlay_style: str = "dots"  # dots | lines
-    overlay_bg: str = "#0a0a0b"  # recording pill background (Linux overlay)
+    overlay_bg: str = "#0a0a0b"  # recording pill background
     overlay_bars: str = "#6b80ff"  # recording pill dot colour
     overlay_position: str = "bottom"  # bottom | top
     overlay_size: float = 1.0  # scale of the pill, 0.75 to 1.5
