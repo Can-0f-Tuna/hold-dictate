@@ -1,0 +1,1040 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<title>hold-dictate settings</title>
+<style>
+@font-face { font-family:"Geist"; src:url(/fonts/geist.woff2) format("woff2"); font-weight:100 900; font-display:swap; }
+@font-face { font-family:"Geist Mono"; src:url(/fonts/geist-mono.woff2) format("woff2"); font-weight:100 900; font-display:swap; }
+/* the same tokens as the website (site/style.css) */
+:root {
+  color-scheme: light;
+  --paper:#fcfcfb; --surface:#fff; --soft:#f2f2ef; --ink:#0c0c0d; --ink-2:#38383b; --muted:#6a6a6f;
+  --line:#e7e7e3; --line-2:#d6d6d1; --edge:#8d8d87; --track:#8d8d87; --accent:#2a46ff; --on-accent:#fff; --ok:#17703d; --err:#c4202b;
+  --key:#fff; --key-edge:#d6d6d1; --key-shade:#c2c2bc; --key-glow:rgba(0,0,0,.35); --key-hi:rgba(255,255,255,0);
+  --sans:"Geist",ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+  --mono:"Geist Mono",ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+  --t-xs:12px; --t-sm:13.5px; --t-base:15px; --t-md:17px;
+  --s-1:4px; --s-2:8px; --s-3:12px; --s-4:16px; --s-5:24px; --s-6:32px; --s-7:48px; --s-8:64px;
+  --r-xs:4px; --r-sm:6px; --r-md:10px; --r-lg:14px; --r-xl:20px; --r-pill:999px;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    color-scheme: dark;
+    --paper:#0a0a0b; --surface:#19191c; --soft:#1f1f22; --ink:#ededeb; --ink-2:#c9c9c5; --muted:#9b9ba0;
+    --line:#27272b; --line-2:#3a3a3f; --edge:#68686f; --track:#68686f; --accent:#6b80ff; --on-accent:#0a0a0b; --ok:#7fe0a0; --err:#ff6b6b;
+    --key:#323238; --key-edge:#64646c; --key-shade:#050506; --key-glow:#000; --key-hi:rgba(255,255,255,.16);
+  }
+}
+* { box-sizing:border-box; }
+html { -webkit-font-smoothing:antialiased; text-rendering:optimizeLegibility; }
+body { margin:0; background:var(--paper); color:var(--ink); font:var(--t-base)/1.55 var(--sans); }
+p { margin:0; }
+a { color:inherit; text-underline-offset:2px; }
+code { font:500 .9em var(--mono); background:var(--soft); border:1px solid var(--line); border-radius:var(--r-sm); padding:1px 5px; overflow-wrap:anywhere; }
+:focus-visible { outline:2px solid var(--accent); outline-offset:2px; }
+[hidden] { display:none !important; }
+
+.wrap { max-width:880px; margin:0 auto; padding:0 var(--s-6); }
+
+/* the save indicator: top right. Its idle text scrolls away with the page; "Saved" and errors stay in view for a moment */
+.bar { position:relative; top:0; z-index:5; height:0; display:flex; justify-content:flex-end; }
+.bar.float { position:sticky; }
+.save { display:flex; align-items:center; gap:var(--s-2); height:32px; margin:var(--s-4) calc(-1 * var(--s-3)) 0 0; padding:0 var(--s-3); border-radius:var(--r-pill);
+  background:color-mix(in srgb, var(--paper) 88%, transparent); -webkit-backdrop-filter:blur(8px); backdrop-filter:blur(8px);
+  font-size:var(--t-sm); color:var(--muted); white-space:nowrap; border:1px solid transparent; transition:background .2s, border-color .2s, box-shadow .2s; }
+.bar.float .save { margin-right:0; }
+.bar.float .save { background:color-mix(in srgb, var(--surface) 92%, transparent); border-color:var(--line); box-shadow:0 6px 20px -12px rgba(0,0,0,.35); } /* over the settings once you scroll */
+.save svg { width:15px; height:15px; flex:none; }
+.save.saving { color:var(--ink-2); }
+.save.saved { color:var(--ink); }
+.save.failed { color:var(--err); white-space:normal; }
+.save.offline { color:var(--err); }
+
+/* banner for problems that block everything */
+.bar + .banner { margin-top:64px; }
+.banner { display:flex; align-items:center; justify-content:space-between; gap:var(--s-4); margin-top:var(--s-3); margin-bottom:var(--s-3); padding:var(--s-3) var(--s-4); border:1px solid var(--line-2); border-radius:var(--r-md); background:var(--surface); font-size:var(--t-sm); }
+.banner.err { border-color:color-mix(in srgb, var(--err) 45%, var(--line)); }
+
+/* the hotkey: the first thing on the page */
+.hero { padding:96px 0 0; } /* room for the save indicator above the shortcut */
+/* the voice, drawn in the recording pill's halftone dots: it moves when dictation is ready, and lies flat when it isn't */
+.wave { display:block; width:100%; height:84px; margin-top:var(--s-7); pointer-events:none; -webkit-mask-image:linear-gradient(90deg, transparent, #000 12%, #000 88%, transparent); mask-image:linear-gradient(90deg, transparent, #000 12%, #000 88%, transparent); }
+.status { display:inline-flex; align-items:center; gap:var(--s-2); font-size:var(--t-sm); color:var(--muted); margin-bottom:var(--s-5); }
+.status i { margin-inline-start:4px; flex:none; width:8px; height:8px; border-radius:50%; background:var(--ok); box-shadow:0 0 0 4px color-mix(in srgb, var(--ok) 16%, transparent); }
+.status:not(.warn) { display:none; } /* when it works, the shortcut says so */
+.status.warn i { background:var(--err); box-shadow:0 0 0 4px color-mix(in srgb, var(--err) 16%, transparent); }
+.status.warn { color:var(--ink); font-weight:500; }
+.status .link { font-weight:400; }
+.keys { display:flex; flex-wrap:wrap; align-items:center; gap:var(--s-3) var(--s-4); font-size:clamp(34px, 6vw, 68px); font-weight:600; letter-spacing:-.02em; line-height:1.15; }
+.keys .word { color:var(--ink); }
+/* the key's side is a shadow under an even face, so the label sits in the middle of the face and nothing is cut off */
+.cap { display:inline-grid; place-items:center; min-width:1.8em; height:1.6em; margin-bottom:5px; padding:0 .5em; border-radius:var(--r-lg); font:600 .58em/1 var(--sans); letter-spacing:-.01em;
+  background:var(--key); border:1px solid var(--key-edge); color:var(--ink);
+  box-shadow:inset 0 1px 0 var(--key-hi), 0 5px 0 -1px var(--key-shade), 0 5px 0 0 var(--key-edge), 0 22px 30px -18px var(--key-glow); transition:transform .08s, box-shadow .08s; }
+.cap.down { transform:translateY(4px); box-shadow:inset 0 1px 0 var(--key-hi), 0 1px 0 -1px var(--key-shade), 0 1px 0 0 var(--key-edge), 0 10px 16px -12px var(--key-glow); }
+.plus { color:var(--muted); font-weight:400; font-size:.6em; }
+.pair { display:inline-flex; align-items:center; gap:var(--s-4); white-space:nowrap; }
+.keys.rec .cap { border-color:var(--accent); }
+.keys.rec .ghost { color:var(--muted); font-weight:400; font-size:.6em; }
+.setup h1 { margin:0; font-size:clamp(30px, 4.6vw, 48px); font-weight:600; letter-spacing:-.02em; line-height:1.1; }
+.setup .slot { margin-top:var(--s-6); max-width:560px; }
+.setup .slot:empty { display:none; }
+#svcMsg { margin-top:var(--s-2); }
+.setup .slot .cmd { display:block; padding:var(--s-3) var(--s-4); font-size:var(--t-sm); border-radius:var(--r-md); user-select:all; }
+.lede { margin-top:var(--s-4); font-size:var(--t-md); color:var(--muted); max-width:56ch; }
+.hero .acts { display:flex; flex-wrap:wrap; align-items:center; gap:var(--s-3); margin-top:var(--s-5); }
+
+/* groups: a title column and a settings column, separated by space and one hairline */
+.group { display:grid; grid-template-columns:220px 1fr; gap:var(--s-5) var(--s-7); padding:var(--s-7) 0; border-bottom:1px solid var(--line); }
+.group > header h2 { margin:0; font-size:var(--t-md); font-weight:600; letter-spacing:-.01em; }
+.group > header p { margin-top:var(--s-1); font-size:var(--t-sm); color:var(--muted); }
+.items { display:grid; gap:var(--s-6); min-width:0; }
+.item { display:grid; gap:var(--s-2); }
+.item > .label { font-weight:500; }
+.row { display:flex; align-items:center; justify-content:space-between; gap:var(--s-5); }
+.row .text { display:grid; gap:2px; min-width:0; }
+.row .text b { font-weight:500; }
+.hint { font-size:var(--t-sm); color:var(--muted); }
+.note { font-size:var(--t-sm); min-height:0; }
+.note:empty { display:none; }
+.note.ok { color:var(--ok); } .note.bad { color:var(--err); } .note.wait { color:var(--muted); }
+
+/* controls */
+input[type=text], input[type=password], input[type=number], select, textarea {
+  font:inherit; font-size:var(--t-base); width:100%; height:40px; padding:0 var(--s-3); border-radius:var(--r-md);
+  border:1px solid var(--edge); background:var(--surface); color:var(--ink); }
+textarea { height:auto; padding:var(--s-2) var(--s-3); line-height:1.5; resize:vertical; }
+select { appearance:none; padding-inline-end:36px; cursor:pointer;
+  background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath d='M3 4.5 6 7.5 9 4.5' fill='none' stroke='%23888' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+  background-repeat:no-repeat; background-position:right 12px center; }
+select option { background:var(--surface); color:var(--ink); }
+input:hover, select:hover { border-color:var(--ink-2); }
+input:focus-visible, select:focus-visible { outline:none; border-color:var(--accent); box-shadow:0 0 0 3px color-mix(in srgb, var(--accent) 22%, transparent); }
+input.mono { font-family:var(--mono); font-size:var(--t-sm); }
+input[type=number] { width:110px; }
+.field { display:flex; gap:var(--s-2); }
+.field input { flex:1; min-width:0; }
+
+.btn { font:inherit; font-size:var(--t-sm); font-weight:500; height:40px; padding:0 var(--s-4); border-radius:var(--r-md); cursor:pointer; white-space:nowrap;
+  border:1px solid var(--edge); background:var(--surface); color:var(--ink); }
+.btn:hover { border-color:var(--ink-2); }
+.btn.primary { background:var(--ink); color:var(--paper); border-color:var(--ink); }
+.btn.primary:hover { opacity:.88; }
+.btn.small { height:32px; padding:0 var(--s-3); }
+.btn:disabled { opacity:.45; cursor:default; }
+.link { font:inherit; font-size:var(--t-sm); color:var(--ink); background:none; border:0; padding:0; cursor:pointer; text-decoration:underline; text-decoration-color:var(--line-2); text-underline-offset:3px; }
+.link:hover { text-decoration-color:var(--ink); }
+
+/* segmented control */
+.seg { display:inline-flex; flex-wrap:wrap; gap:2px; padding:3px; border-radius:var(--r-md); background:var(--soft); }
+.seg button { font:inherit; font-size:var(--t-sm); font-weight:500; height:32px; padding:0 var(--s-4); border-radius:var(--r-sm); border:0; background:none; color:var(--muted); cursor:pointer; }
+.seg button:hover { color:var(--ink); }
+.seg button[aria-pressed=true] { background:var(--ink); color:var(--paper); }
+
+/* switch: a clearly visible track in both modes */
+.switch { appearance:none; flex:none; width:44px; height:26px; margin:0; border-radius:var(--r-pill); background:var(--track); position:relative; cursor:pointer; transition:background .15s; }
+.switch::after { content:""; position:absolute; top:3px; left:3px; width:20px; height:20px; border-radius:50%; background:#fff; box-shadow:0 1px 3px rgba(0,0,0,.3); transition:transform .15s; }
+.switch:checked { background:var(--ink); }
+.switch:checked::after { background:var(--paper); }
+.switch:checked::after { transform:translateX(18px); }
+.switch:disabled { opacity:.45; cursor:default; }
+.switch:focus-visible { outline:2px solid var(--accent); outline-offset:2px; }
+
+/* language chips */
+/* word replacements and rules per app: rows of [this] [that] [remove] */
+.pairs { display:grid; gap:var(--s-2); }
+.pairs:empty { display:none; }
+.pair { display:flex; gap:var(--s-2); align-items:center; }
+.pair > input, .pair > select { flex:1; min-width:0; }
+.pair > .to { color:var(--muted); flex:none; }
+.btn.icon { width:32px; padding:0; display:inline-grid; place-items:center; flex:none; border-color:transparent; background:none; color:var(--muted); }
+.btn.icon:hover { color:var(--ink); border-color:var(--line-2); }
+.pair input.dup { border-color:var(--err); }
+.pairs + .note { margin-top:calc(-1 * var(--s-1)); }
+code.cmd-inline { white-space:nowrap; }
+#rulesBox { display:grid; gap:var(--s-2); }
+#appRows .pair > input { flex:.7; } /* the rule needs the room more than the app name */
+#rulesBox[inert] { opacity:.5; }
+.btn.icon svg { width:12px; height:12px; }
+.last { padding:var(--s-3) var(--s-4); border:1px solid var(--line-2); border-radius:var(--r-md); background:var(--surface); white-space:pre-wrap; overflow-wrap:anywhere; max-height:160px; overflow:auto; unicode-bidi:plaintext; }
+.last.empty { color:var(--muted); }
+.note bdi, .hint bdi { white-space:nowrap; }
+.ex { display:grid; gap:2px; margin-top:var(--s-1); }
+.chips { display:flex; flex-wrap:wrap; gap:var(--s-2); }
+.chip { font:inherit; font-size:var(--t-sm); font-weight:500; height:34px; padding:0 var(--s-4); border-radius:var(--r-pill); cursor:pointer;
+  border:1px solid transparent; background:var(--soft); color:var(--ink-2); display:inline-flex; align-items:center; gap:var(--s-2); }
+.chip:hover { color:var(--ink); border-color:var(--line-2); }
+.chip[aria-pressed=true] { background:var(--ink); border-color:var(--ink); color:var(--paper); }
+.chip svg { width:12px; height:12px; }
+.picked { font-size:var(--t-base); }
+.picked b { font-weight:600; }
+.more { max-width:260px; }
+
+/* model line */
+.model { display:flex; flex-wrap:wrap; align-items:baseline; gap:var(--s-2) var(--s-3); }
+
+/* recording pill preview */
+.stage { position:relative; height:150px; border-radius:var(--r-lg); overflow:hidden; border:1px solid var(--line);
+  background:radial-gradient(var(--line-2) 1px, transparent 1.2px) 0 0/12px 12px, var(--soft); }
+.pill { position:absolute; left:50%; display:grid; place-items:center; width:224px; height:56px; border-radius:var(--r-pill); border:1px solid #2a2a2e; transform:translateX(-50%) scale(var(--s,1)); transition:top .2s, bottom .2s; box-shadow:0 14px 34px -14px rgba(0,0,0,.5); }
+.pill canvas { display:block; width:192px; height:40px; }
+.swatches { display:flex; flex-wrap:wrap; align-items:center; gap:var(--s-3); }
+.swatches button { width:26px; height:26px; border-radius:50%; border:1px solid var(--edge); cursor:pointer; padding:0; }
+.swatches button[aria-pressed=true] { outline:2px solid var(--ink); outline-offset:3px; }
+.swatches label { display:inline-flex; align-items:center; gap:var(--s-2); font-size:var(--t-sm); color:var(--muted); margin-inline-start:var(--s-1); }
+input[type=color] { width:30px; height:30px; padding:2px; border:1px solid var(--edge); border-radius:var(--r-sm); background:var(--surface); cursor:pointer; }
+input[type=range] { width:220px; accent-color:var(--ink); }
+
+/* advanced */
+details > summary { cursor:pointer; list-style:none; display:inline-flex; align-items:center; gap:var(--s-2); font-weight:500; }
+details > summary::-webkit-details-marker { display:none; }
+details > summary svg { width:14px; height:14px; transition:transform .15s; color:var(--muted); }
+details[open] > summary svg { transform:rotate(90deg); }
+details .items { margin-top:var(--s-6); }
+
+.acts-end { display:flex; gap:var(--s-2); }
+.acts-start { display:flex; flex-wrap:wrap; align-items:center; gap:var(--s-2) var(--s-3); }
+.upd { display:grid; gap:var(--s-2); flex:1; min-width:0; }
+.upd .note { display:flex; align-items:center; gap:var(--s-2); font-variant-numeric:tabular-nums; }
+.upd .note svg { width:15px; height:15px; flex:none; }
+.prog { display:block; height:4px; max-width:320px; border-radius:var(--r-pill); background:var(--line); overflow:hidden; }
+.prog i { display:block; height:100%; width:0; border-radius:inherit; background:var(--accent); transition:width .25s ease-out; }
+.gap-top { margin-top:var(--s-3); }
+.foot { padding:var(--s-6) 0 var(--s-8); font-size:var(--t-sm); color:var(--muted); display:flex; flex-wrap:wrap; gap:var(--s-2) var(--s-5); justify-content:space-between; }
+
+@media (max-width:720px) {
+  .wrap { padding:0 var(--s-4); }
+  .group { grid-template-columns:1fr; gap:var(--s-5); padding:var(--s-6) 0; }
+  .hero { padding:80px 0 0; }
+  .row { align-items:flex-start; }
+  .wave { height:64px; margin-top:var(--s-6); }
+  .cap { border-radius:var(--r-md); }
+}
+@media (prefers-reduced-motion: reduce) { * { transition:none !important; } }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<div class="bar">
+  <div class="save" id="save" role="status" aria-live="polite"></div>
+</div>
+<div class="banner err" id="stale" hidden><span>This page belongs to an earlier run of hold-dictate and can't save any more. Open the settings again <span id="reopenWhere">from the hold-dictate icon</span>, or run <code>hold-dictate settings</code>.</span></div>
+
+<div class="banner err" id="lastProblem" role="alert" hidden><span><b id="lastProblemBrief"></b><span class="hint" id="lastProblemDetail"></span></span><button class="btn" id="lastProblemClear">Dismiss</button></div>
+
+<section class="hero" aria-label="Status">
+  <div class="status" id="status"><i></i><span id="statusText"></span></div>
+  <div id="readyView">
+    <div class="keys" id="heroKeys"></div>
+    <p class="lede" id="heroLede"></p>
+    <div class="acts">
+      <button class="btn" id="recKey">Change shortcut</button>
+      <span class="note" id="hotkeyMsg"></span>
+    </div>
+  </div>
+  <div class="setup" id="setupView" hidden>
+    <h1 id="setupTitle"></h1>
+    <p class="lede" id="setupLede"></p>
+    <div class="slot" id="keySlot"></div>
+    <p class="note" id="svcMsg"></p>
+  </div>
+  <button class="btn primary" id="startSvc" hidden>Start hold-dictate</button>
+  <canvas class="wave" id="wave" aria-hidden="true"></canvas>
+</section>
+
+<section class="group" aria-labelledby="h-service">
+  <header><h2 id="h-service">Transcription</h2><p>The service that turns your speech into text.</p></header>
+  <div class="items">
+    <div class="item">
+      <span class="label" id="l-provider">Service</span>
+      <div><div class="seg" id="provider" role="group" aria-labelledby="l-provider"></div></div>
+    </div>
+    <div class="item" id="keyRows">
+      <label class="label" for="key">API key</label>
+      <div class="field"><input type="password" id="key" class="mono" autocomplete="off" spellcheck="false"><button class="btn primary" id="saveKey">Check and save</button></div>
+      <p class="note" id="keyMsg"></p>
+      <p class="hint" id="keyHelp"></p>
+    </div>
+    <div class="item" id="customRows">
+      <label class="label" for="base_url">Server address</label>
+      <input type="text" id="base_url" class="mono" placeholder="https://host/v1" spellcheck="false">
+      <label class="label gap-top" for="model">Model name</label>
+      <input type="text" id="model" class="mono" spellcheck="false">
+    </div>
+    <p class="hint" id="localHelp"></p>
+    <div class="item" id="modelRow">
+      <span class="label">Model</span>
+      <div class="model"><span id="modelAuto"></span><button class="link" id="modelAdv" aria-expanded="false" aria-controls="modelPick">Choose another</button></div>
+      <div class="item" id="modelPick" hidden>
+        <select id="modelSel" aria-label="Model"></select>
+        <p class="hint" id="modelNote"></p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="group" aria-labelledby="h-lang">
+  <header><h2 id="h-lang">Languages</h2><p>Pick every language you speak, and the transcriber listens for those.</p></header>
+  <div class="items">
+    <p class="picked" id="picked">None picked, so any language is detected. Picking yours gives better results.</p>
+    <div class="chips" id="chips" role="group" aria-label="Languages"></div>
+    <select id="moreLang" class="more" aria-label="Add another language"></select>
+  </div>
+</section>
+
+<section class="group" aria-labelledby="h-dictate">
+  <header><h2 id="h-dictate">While you dictate</h2><p>How the shortcut works, and what happens while you talk.</p></header>
+  <div class="items">
+    <div class="item">
+      <span class="label" id="l-mode">Shortcut</span>
+      <div><div class="seg" id="hotkey_mode" role="group" aria-labelledby="l-mode"><button data-v="hold">Hold to talk</button><button data-v="auto">Tap or hold</button><button data-v="toggle">Tap on/off</button></div></div>
+      <p class="hint" id="modeHint"></p>
+    </div>
+    <div class="row" id="silenceRow"><label class="text" for="silence_stop"><b>Stop after silence</b><span class="hint" id="silenceHint"></span></label><input type="number" id="silence_stop" min="0" max="60" step="0.5"></div>
+    <div class="item">
+      <span class="label" id="l-typing">When the text is typed</span>
+      <div><div class="seg" id="live_text" role="group" aria-labelledby="l-typing"><button data-v="end">When you finish</button><button data-v="live">As you speak</button></div></div>
+      <p class="hint" id="liveHint"></p>
+    </div>
+    <div class="item">
+      <span class="label" id="l-bg">Music and videos</span>
+      <div><div class="seg" id="background_audio" role="group" aria-labelledby="l-bg"><button data-v="lower">Turn down</button><button data-v="mute">Silence</button><button data-v="off">Leave as is</button></div></div>
+      <p class="hint" id="bgHint"></p>
+    </div>
+    <label class="row"><span class="text"><b>Sounds</b><span class="hint">A short sound when recording starts and stops, and when something goes wrong.</span></span><input type="checkbox" class="switch" id="beeps"></label>
+  </div>
+</section>
+
+<section class="group" aria-labelledby="h-text">
+  <header><h2 id="h-text">Text</h2><p>Clean-ups made before the text is typed.</p></header>
+  <div class="items">
+    <label class="row"><span class="text"><b>Drop phrases made up from noise</b><span class="hint">From silence or noise, the transcriber sometimes writes things like “Thanks for watching”.</span></span><input type="checkbox" class="switch" id="drop_hallucinations"></label>
+    <label class="row"><span class="text"><b>Remove filler words</b><span class="hint">um, uh, <bdi>אה</bdi>, <bdi>אממ</bdi></span></span><input type="checkbox" class="switch" id="remove_fillers"></label>
+    <div class="item" id="fillerRow"><label class="label" for="filler_words">Filler words</label><textarea id="filler_words" dir="auto" rows="2" spellcheck="false"></textarea><p class="hint">Separate them with commas. <button class="link" id="resetFillers">Back to the built-in list</button></p></div>
+    <div class="item">
+      <label class="row"><span class="text"><b>Say punctuation out loud</b><span class="hint">Say the mark and it's typed:</span></span><input type="checkbox" class="switch" id="spoken_punctuation"></label>
+      <div class="hint ex">
+        <span>“comma” or “<bdi>פסיק</bdi>” → ,</span>
+        <span>“period” or “<bdi>נקודה</bdi>” → .</span>
+        <span>“question mark” or “<bdi>סימן שאלה</bdi>” → ?</span>
+        <span>“new line” or “<bdi>שורה חדשה</bdi>” → a new line</span>
+      </div>
+      <p class="note wait" id="spokenWarn">The word turns into the mark wherever it's said, so “<bdi>נקודה חשובה</bdi>” becomes “<bdi>. חשובה</bdi>”.</p>
+    </div>
+    <div class="item">
+      <span class="label" id="l-words">Word replacements</span>
+      <p class="hint">For words the transcriber keeps getting wrong. Leave the second box empty to delete the word. Hebrew words also match with a prefix such as <bdi>ב</bdi>, <bdi>ל</bdi> or <bdi>ו</bdi>.</p>
+      <div class="pairs" id="wordRows" role="group" aria-labelledby="l-words"></div>
+      <p class="note bad" id="wordDup" hidden></p>
+      <div><button class="link" id="addWord">+ Add a word</button></div>
+    </div>
+  </div>
+</section>
+
+<section class="group" aria-labelledby="h-paste">
+  <header><h2 id="h-paste">Pasting</h2><p>Where the text goes once it's ready.</p></header>
+  <div class="items">
+    <div class="item" id="lastRow">
+      <span class="label">Last dictation</span>
+      <div class="last" id="lastText"></div>
+      <div class="acts-start"><button class="btn small" id="copyLast">Copy</button><span class="note" id="lastMsg"></span></div>
+      <p class="hint">To paste it again anywhere, give <code class="cmd-inline">hold-dictate paste-last</code> a keyboard shortcut in your system settings.</p>
+    </div>
+    <label class="row"><span class="text"><b>Press Enter after pasting</b><span class="hint" id="submitHint">In chat apps this sends the message at once. A rule below can turn it on or off for one app.</span></span><input type="checkbox" class="switch" id="auto_submit"></label>
+    <div class="item">
+      <span class="label" id="l-rules">Rules per app</span>
+      <p class="note bad" id="noFocus">This system can't tell which app is in front (GNOME or KDE on Wayland), so rules per app don't work here.</p>
+      <p class="hint">A rule applies when its name is part of the app's name, in any case.</p>
+      <div id="rulesBox">
+      <div class="pairs" id="appRows" role="group" aria-labelledby="l-rules"></div>
+      <p class="note bad" id="appDup" hidden></p>
+      <div class="acts-start"><button class="link" id="addApp">+ Add a rule</button><button class="link" id="addLastApp" hidden></button></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="group" id="lookGroup" aria-labelledby="h-look">
+  <header><h2 id="h-look">Recording pill</h2><p>The small window that shows while you speak.</p></header>
+  <div class="items">
+    <div class="stage" id="stage"><div class="pill" id="pill"></div></div>
+    <div class="item"><span class="label" id="l-style">Style</span>
+      <div><div class="seg" id="overlay_style" role="group" aria-labelledby="l-style"><button data-v="dots">Dots</button><button data-v="lines">Lines</button></div></div>
+    </div>
+    <div class="item"><span class="label">Color</span>
+      <div class="swatches" id="swatches">
+        <label><input type="color" id="overlay_bars" aria-label="Custom dot color">Custom</label>
+        <label><input type="color" id="overlay_bg" aria-label="Background color">Background</label>
+      </div>
+    </div>
+    <div class="item"><span class="label" id="l-pos">Position</span>
+      <div><div class="seg" id="overlay_position" role="group" aria-labelledby="l-pos"><button data-v="bottom">Bottom</button><button data-v="top">Top</button></div></div>
+    </div>
+    <div class="item"><label class="label" for="overlay_size">Size</label><input type="range" id="overlay_size" min="0.75" max="1.5" step="0.05"></div>
+    <div><button class="link" id="resetLook">Reset the look</button></div>
+  </div>
+</section>
+
+<!--extension sections-->
+<section class="group" id="updGroup" aria-labelledby="h-upd">
+  <header><h2 id="h-upd">Updates</h2><p id="verLine"></p></header>
+  <div class="items">
+    <label class="row"><span class="text"><b>Install updates automatically</b><span class="hint">New versions install while you're not dictating.</span></span><input type="checkbox" class="switch" id="auto_update"></label>
+    <div class="row"><span class="upd"><span class="note" id="updMsg"></span><span class="prog" id="updBar" hidden><i></i></span></span><span class="acts-end"><button class="btn small primary" id="installUpd" hidden>Update now</button><button class="btn small" id="checkUpd">Check now</button></span></div>
+  </div>
+</section>
+
+<section class="group" aria-labelledby="h-adv">
+  <header><h2 id="h-adv">Advanced</h2></header>
+  <div class="items">
+    <details id="adv"><summary><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M6 3.5 10.5 8 6 12.5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>Spelling hint, offline fallback, timing and text hook</summary>
+      <div class="items">
+        <div class="item"><label class="label" for="prompt">Spelling hint</label><input type="text" id="prompt"><p class="hint">Words and names the transcriber should spell your way, for example Kubernetes or your colleagues' names.</p></div>
+        <label class="row"><span class="text"><b>Use the offline model if the service fails</b><span class="hint">Only when the offline model is installed.</span></span><input type="checkbox" class="switch" id="local_fallback"></label>
+        <div class="row"><label class="text" for="min_hold"><b>Ignore taps shorter than</b><span class="hint">Seconds. A shorter press doesn't record.</span></label><input type="number" id="min_hold" min="0" max="2" step="0.05"></div>
+        <div class="row"><label class="text" for="timeout"><b>Give up on the service after</b><span class="hint">Seconds without an answer.</span></label><input type="number" id="timeout" min="3" max="120" step="1"></div>
+        <div class="item"><label class="label" for="post_hook">Text hook</label><input type="text" id="post_hook" class="mono" spellcheck="false" placeholder="a shell command"><p class="hint">A command that gets the text on its input; what it prints is typed instead. No output keeps the text, and exit code 77 types nothing. It has 5 seconds, and HOLD_DICTATE_APP and HOLD_DICTATE_PROVIDER tell it the app and the service.</p></div>
+      </div>
+    </details>
+  </div>
+</section>
+
+<footer class="foot"><span>Settings file: <code id="cfgPath"></code></span></footer>
+</div>
+
+<script>
+const TOKEN = new URLSearchParams(location.search).get('t') || '';
+history.replaceState(null, '', '/?t=' + encodeURIComponent(TOKEN) + location.hash);
+const $ = id => document.getElementById(id);
+const MAC = navigator.platform.startsWith('Mac');
+const ICON_OK = '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3.5 8.5 6.5 11.5 12.5 4.5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+const ICON_X = '<svg viewBox="0 0 12 12" aria-hidden="true"><path d="M3 3l6 6M9 3l-6 6" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>';
+const POPULAR = ['en', 'he', 'ar', 'ru', 'es', 'fr', 'de', 'it', 'pt', 'uk', 'pl', 'tr', 'zh', 'ja', 'hi', 'nl'];
+let S = /*STATE*/null; // the last state from the server, filled in when the page is served
+
+// ---- talking to hold-dictate ----
+class Stale extends Error {}
+async function api(path, body) {
+  let res;
+  try { res = await fetch(path, { method: body === undefined ? 'GET' : 'POST', headers: { 'X-Token': TOKEN, 'Content-Type': 'application/json' }, body: body === undefined ? undefined : JSON.stringify(body) }); }
+  catch { if (upd) throw new Error('restarting'); reachable = false; saveState('offline'); if (S) render(S); retry(); throw new Error("can't reach hold-dictate. Is it running?"); }
+  if (!reachable) { reachable = true; saveState('idle'); }
+  if (res.status === 403) { $('stale').hidden = false; saveState('failed', "Can't save"); throw new Stale('open the settings again'); }
+  const data = await res.json().catch(() => ({ error: res.statusText }));
+  if (!res.ok) throw new Error(data.error || res.statusText);
+  return data;
+}
+// Where an extension joins in, from the script it adds to this page.
+const pageHooks = { blockers: [], renders: [], starts: [] }; // blockers: s => a blocker or null; renders: s => draw; starts: () => run once
+const hook = (list, ...args) => { for (const f of list) try { const r = f(...args); if (r) return r; } catch (e) { console.error(e); } };
+const homes = Object.fromEntries(['keyRows', 'customRows', 'startSvc'].map(id => [id, { parent: $(id).parentNode, next: $(id).nextElementSibling }]));
+
+// ---- the save indicator: every change saves at once ----
+let saveTimer;
+function saveState(kind, text) {
+  const el = $('save');
+  el.className = 'save ' + kind;
+  const label = { idle: 'Changes save automatically', saving: 'Saving…', saved: 'Saved', failed: text, offline: 'Not connected' }[kind];
+  el.innerHTML = (kind === 'saved' ? ICON_OK : '') + '<span></span>';
+  el.lastChild.textContent = label;
+  clearTimeout(saveTimer);
+  if (kind === 'saved') saveTimer = setTimeout(() => saveState('idle'), 2200);
+  floatSave();
+}
+function floatSave() { document.querySelector('.bar').classList.toggle('float', scrollY > 24 && !$('save').classList.contains('idle')); }
+async function save(changes) {
+  saveState('saving');
+  try { S = await api('/api/config', changes); render(S); saveState('saved'); return true; }
+  catch (e) { if (e instanceof Stale) saveState('failed', "Can't save"); else if (!reachable) saveState('offline'); else saveState('failed', `Not saved: ${e.message}`); if (S) render(S); return false; }
+}
+const debounced = {};
+function saveSoon(id, value) { clearTimeout(debounced[id]); debounced[id] = setTimeout(() => save({ [id]: value() }), 700); }
+
+// ---- drawing the state ----
+const pretty = p => ({ alt: MAC ? 'Option' : 'Alt', ctrl: 'Ctrl', shift: 'Shift', super: MAC ? 'Cmd' : 'Win', space: 'Space' }[p] || p.toUpperCase());
+function keycaps(parts, tail, el = $('heroKeys')) {
+  el.innerHTML = '';
+  const hero = el.id === 'heroKeys'; // any other shortcut has the keys alone
+  const word = t => { const s = document.createElement('span'); s.className = 'word'; s.textContent = t; return s; };
+  const mode = S ? S.config.hotkey_mode : 'hold';
+  if (hero) el.append(word({ auto: 'Tap or hold', toggle: 'Tap' }[mode] || 'Hold'));
+  if (!hero && !parts.length && !tail) { el.append(word('Off')); return; }
+  parts.forEach((p, i) => {
+    const c = document.createElement('kbd'); c.className = 'cap'; c.textContent = pretty(p);
+    if (!i) { el.append(c); return; }
+    // a "+" never starts a line: it stays with the key after it
+    const pair = document.createElement('span'), plus = document.createElement('span');
+    pair.className = 'pair'; plus.className = 'plus'; plus.textContent = '+';
+    pair.append(plus, c); el.append(pair);
+  });
+  if (tail) { const g = document.createElement('span'); g.className = 'ghost'; g.textContent = tail; el.append(g); }
+  else if (hero) el.append(word(mode === 'toggle' ? 'to start and stop.' : 'and talk.'));
+}
+
+const where = s => s.platform.startsWith('linux') ? 'from your app menu (hold-dictate settings)' : s.platform === 'darwin' ? 'from the hold-dictate icon in the menu bar' : 'from the hold-dictate icon next to the clock';
+
+// What stops dictation from working, most basic first. null when it is ready.
+let reachable = true, retryTimer = 0;
+function retry() { if (!retryTimer) retryTimer = setTimeout(() => { retryTimer = 0; refresh(); }, 3000); }
+function showProblem(p) {
+  $('lastProblem').hidden = !p;
+  if (!p) return;
+  $('lastProblemBrief').textContent = p.brief;
+  $('lastProblemDetail').textContent = p.detail ? ' ' + p.detail : '';
+}
+function blocker(s) {
+  const c = s.config, service = ((s.providers[c.provider] || {}).label || '').replace(/ \(.*/, '');
+  if (!reachable) return { title: 'Can\'t reach hold-dictate.', lede: `It may have quit, or it's restarting after an update. Start it again ${where(s)}.${s.running ? ' This page reconnects when it is back.' : ''}` };
+  const blocked = hook(pageHooks.blockers, s);
+  if (blocked) return blocked;
+  if (!s.running) return { title: 'hold-dictate isn\'t running.', lede: 'Start it, and it also starts every time you log in.', act: 'start' };
+  if (s.problem) {
+    // the server's text: a sentence, then indented command lines
+    const [first, ...rest] = s.problem.split('\n'), cmd = rest.map(l => l.trim()).filter(Boolean).join('\n');
+    const keyboard = /keyboard/.test(first);
+    const text = first.replace(/^cannot read the keyboard\.\s*/i, '');
+    return { title: keyboard ? 'hold-dictate can\'t read the keyboard yet.' : 'The shortcut can\'t work yet.', lede: text[0].toUpperCase() + text.slice(1) + (cmd && !text.endsWith(':') ? ' Run this in a terminal:' : ''), code: cmd || undefined };
+  }
+  if (c.provider === 'local') return s.local_installed ? null : { title: 'Install the offline model to start.', lede: 'It runs on this computer without internet. Run this in a terminal, then reload this page:', code: 'uv tool install --force "hold-dictate[local]"' };
+  if (c.provider === 'custom' && !c.base_url) return { title: 'Add your server\'s address to start.', lede: 'A custom service needs the address of any server that speaks the OpenAI transcription API.', move: 'customRows' };
+  if (!s.key_hint && !s.key_from_env) return { title: 'Paste an API key to start dictating.', lede: `hold-dictate sends what you say to a speech service, which turns it into text. You're set up for ${service}${c.provider === 'groq' ? ', which is free' : ''}. You can pick another service below.`, move: 'keyRows' };
+  return null;
+}
+
+function status(s) {
+  const b = blocker(s);
+  if (still) requestAnimationFrame(drawWave);
+  $('status').classList.toggle('warn', !!b);
+  $('statusText').textContent = b ? 'Dictation is off' : '';
+  // When dictation can't work, the hero becomes the fix, and the shortcut waits until it is true.
+  $('readyView').hidden = !!b; $('setupView').hidden = !b; $('startSvc').hidden = true;
+  for (const [id, home] of Object.entries(homes)) if ($(id).parentNode !== home.parent && (!b || b.move !== id))
+    home.parent.insertBefore($(id), home.next && home.next.parentNode === home.parent ? home.next : $('wave'));
+  const slot = $('keySlot');
+  [...slot.children].forEach(el => { if (!(el.id in homes)) el.remove(); });
+  if (!b) return;
+  $('setupTitle').textContent = b.title;
+  $('setupLede').textContent = b.lede;
+  if (b.move && $(b.move).parentNode !== slot) slot.append($(b.move));
+  if (b.code) slot.append(Object.assign(document.createElement('code'), { className: 'cmd', textContent: b.code }));
+  $('startSvc').hidden = b.act !== 'start';
+  if (b.act === 'start') slot.append($('startSvc'));
+  if (b.button) slot.append(b.button);
+}
+
+function render(s) {
+  const c = s.config;
+  status(s);
+  $('reopenWhere').textContent = where(s);
+  if (recording !== 'hotkey') keycaps(c.hotkey.split('+'));
+  $('heroLede').textContent = { auto: 'Tap the keys to start and tap again to stop, or hold them and let go when you\'re done. The text is typed where your cursor is.',
+    toggle: 'Tap the keys, speak, and tap them again. The text is typed where your cursor is.' }[c.hotkey_mode] || 'Hold the keys and speak. Let go, and the text is typed where your cursor is.';
+  if (!recording && s.hotkey_problem) { $('hotkeyMsg').className = 'note bad'; $('hotkeyMsg').textContent = s.hotkey_problem; }
+  else if (!recording && $('hotkeyMsg').classList.contains('bad')) $('hotkeyMsg').textContent = '';
+  renderService(s);
+  renderLanguages(s);
+  document.querySelectorAll('#background_audio button').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.v === c.background_audio)));
+  $('bgHint').textContent = !s.ducking ? 'This needs pactl (from the pulseaudio-utils package). Install it to use this.'
+    : c.background_audio === 'off' ? 'Other apps keep playing as usual.'
+    : s.platform === 'darwin' ? `Spotify and Music get ${c.background_audio === 'mute' ? 'silent' : 'quieter'} while you record, and come back when you stop. macOS can't change other apps' volume.`
+    : `Other apps get ${c.background_audio === 'mute' ? 'silent' : 'quieter'} while you record, and come back when you stop. Headphones and Bluetooth stay as they are: the microphone can't hear them.`;
+  showProblem(s.last_problem);
+  $('beeps').checked = c.beeps;
+  document.querySelectorAll('#live_text button').forEach(b => b.setAttribute('aria-pressed', String((b.dataset.v === 'live') === c.live_text)));
+  const liveOff = c.post_hook.trim() ? 'A text hook is on, so the text still comes when you finish. Remove it to use this.'
+    : s.platform !== 'linux' && c.hotkey_mode === 'hold' ? 'While you hold the keys nothing can be typed on this system, so the text comes when you let go. Use Tap or hold, or Tap on/off, to see it as you speak.' : '';
+  $('liveHint').textContent = c.live_text
+    ? liveOff || "The words appear in the text box you are in while you talk, a few at a time. Words can't be corrected once typed, so it can be a little less accurate. Each step is a request to your speech service, which counts toward its limits."
+    : 'All the text is pasted at once when you finish. The most accurate way.';
+  $('lookGroup').hidden = !s.overlay;
+  $('overlay_bg').value = c.overlay_bg; $('overlay_bars').value = c.overlay_bars;
+  for (const id of ['overlay_style', 'overlay_position']) document.querySelectorAll(`#${id} button`).forEach(b => b.setAttribute('aria-pressed', String(b.dataset.v === c[id])));
+  document.querySelectorAll('#swatches button').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.v === c.overlay_bars.toLowerCase())));
+  $('overlay_size').value = c.overlay_size;
+  renderUpdates(s);
+  $('local_fallback').checked = c.local_fallback;
+  for (const id of ['prompt', 'base_url', 'model', 'post_hook']) if (document.activeElement !== $(id)) $(id).value = c[id];
+  if (document.activeElement !== $('filler_words')) $('filler_words').value = c.filler_words || s.fillers_default.join(', '); // the built-in list, to edit
+  fitFillers(); // don't move the cursor while typing
+  for (const id of ['min_hold', 'timeout', 'silence_stop']) $(id).value = c[id];
+  renderMode(s); renderText(s); renderPasting(s); // these save on change, so show what was kept (out-of-range values are clamped)
+  $('cfgPath').textContent = s.config_path;
+  drawPill();
+  hook(pageHooks.renders, s);
+}
+
+// Buttons are rebuilt on every render; this puts keyboard focus back on the one that was pressed.
+function keepFocus(box, build) {
+  const k = box.contains(document.activeElement) ? document.activeElement.dataset.k : null;
+  build();
+  if (k) { const b = box.querySelector(`[data-k="${k}"]`); if (b) b.focus(); }
+}
+
+// ---- transcription service ----
+function renderService(s) {
+  const c = s.config, prov = $('provider');
+  keepFocus(prov, () => { prov.innerHTML = '';
+  for (const [k, label] of [...Object.entries(s.providers).map(([k, v]) => [k, v.label.replace(/ \(.*/, '')]), ['local', 'Offline']]) {
+    const b = document.createElement('button');
+    b.type = 'button'; b.dataset.k = k; b.textContent = label; b.setAttribute('aria-pressed', String(c.provider === k));
+    b.onclick = () => { if (c.provider === k) return; $('key').value = ''; $('keyMsg').className = 'note'; $('keyMsg').textContent = ''; save({ provider: k, ...(k === 'groq' || k === 'openai' ? { model: '' } : {}) }); };
+    prov.append(b);
+  } });
+  const local = c.provider === 'local', p = s.providers[c.provider];
+  $('keyRows').hidden = local;
+  $('customRows').hidden = c.provider !== 'custom';
+  $('localHelp').hidden = !local || !s.local_installed; // when it is missing, the hero shows the install command
+  $('localHelp').innerHTML = '';
+  $('localHelp').append(s.local_installed ? 'Runs on this computer without internet. The first use downloads the model.' : 'The offline model needs one more install. In a terminal, run ', ...(s.local_installed ? [] : [Object.assign(document.createElement('code'), { textContent: 'uv tool install --force "hold-dictate[local]"' })]));
+  $('saveKey').classList.toggle('primary', (blocker(s) || {}).move === 'keyRows');
+  $('key').placeholder = s.key_hint ? `Saved key ${s.key_hint}` : s.key_from_env ? 'A key is set in an environment variable.' : 'Paste your key here';
+  const help = $('keyHelp'); help.textContent = '';
+  if (p && p.keys_url) {
+    const a = document.createElement('a'); a.href = p.keys_url; a.target = '_blank'; a.rel = 'noopener'; a.textContent = new URL(p.keys_url).host;
+    help.append(c.provider === 'groq' ? 'Get a free key at ' : 'Get a key at ', a, '. Sign in, create a key, copy it and paste it here. It stays on this computer.');
+  }
+  renderModel(s);
+}
+
+let modelOpen = null; // null until the first render, then the user's choice
+function renderModel(s) {
+  const c = s.config, local = c.provider === 'local';
+  $('modelRow').hidden = c.provider === 'custom'; // a custom server takes a typed model name above
+  if (c.provider === 'custom') return;
+  const list = local ? s.local_models : s.providers[c.provider].models;
+  const best = list[0][0], value = local ? c.local_model : c.model;
+  const auto = local ? value === best : !value;
+  if (modelOpen === null) modelOpen = !auto;
+  $('modelAuto').textContent = auto ? `${best}, the one we recommend` : value;
+  $('modelAdv').setAttribute('aria-expanded', String(modelOpen));
+  $('modelAdv').textContent = modelOpen ? 'Hide' : 'Choose another';
+  $('modelPick').hidden = !modelOpen;
+  const sel = $('modelSel'); sel.innerHTML = '';
+  sel.add(new Option(`Automatic (${best}, recommended)`, local ? best : ''));
+  for (const [id, note] of list) if (!(local && id === best)) sel.add(new Option(`${id}: ${note}`, id));
+  if (value && ![...sel.options].some(o => o.value === value)) sel.add(new Option(value, value));
+  sel.value = auto ? (local ? best : '') : value;
+  $('modelNote').textContent = auto ? 'Automatic follows our recommendation, so it changes if a better model comes out.' : '';
+}
+$('modelAdv').onclick = () => { modelOpen = !modelOpen; renderModel(S); };
+$('modelSel').addEventListener('change', () => save({ [S.config.provider === 'local' ? 'local_model' : 'model']: $('modelSel').value }));
+
+// The key is the one setting with its own button: it is checked with the service before it is saved.
+function keyDirty() {
+  const dirty = $('key').value.trim() !== '';
+  const msg = $('keyMsg');
+  if (dirty && !msg.classList.contains('bad')) { msg.className = 'note wait'; msg.textContent = 'Not saved yet. Press Check and save.'; }
+  else if (!dirty && msg.classList.contains('wait')) msg.textContent = '';
+}
+async function saveKey() {
+  const key = $('key').value.trim(), msg = $('keyMsg');
+  if (!key && !S.key_hint) { msg.className = 'note bad'; msg.textContent = 'Paste a key first.'; return; }
+  msg.className = 'note wait'; msg.textContent = 'Checking the key…';
+  $('saveKey').disabled = true;
+  try {
+    const r = await api('/api/test', { api_key: key });
+    if (!r.ok) { msg.className = 'note bad'; msg.textContent = r.message; return; }
+    if (key && !(await save({ api_key: key }))) { msg.textContent = ''; return; }
+    $('key').value = '';
+    msg.className = 'note ok'; msg.textContent = key ? 'The key works and is saved.' : 'The saved key works.';
+  } catch (e) { msg.className = 'note bad'; msg.textContent = e.message; }
+  finally { $('saveKey').disabled = false; }
+}
+$('saveKey').onclick = saveKey;
+$('key').addEventListener('keydown', e => { if (e.key === 'Enter') saveKey(); });
+$('key').addEventListener('input', () => { $('keyMsg').className = 'note'; $('keyMsg').textContent = ''; keyDirty(); });
+
+// ---- languages: any number, kept in the order you picked them ----
+function renderLanguages(s) {
+  const chosen = s.config.languages, names = Object.fromEntries(s.languages);
+  $('picked').hidden = chosen.length > 0; // once some are picked, the filled chips say it
+  const chips = $('chips');
+  keepFocus(chips, () => { chips.innerHTML = '';
+  for (const code of [...new Set([...POPULAR, ...chosen])]) { // fixed places, so a chip doesn't jump when picked
+    const on = chosen.includes(code), b = document.createElement('button');
+    b.type = 'button'; b.className = 'chip'; b.dataset.k = code; b.setAttribute('aria-pressed', String(on));
+    b.innerHTML = on ? ICON_X : ''; b.prepend(names[code] || code);
+    b.setAttribute('aria-label', on ? `Remove ${names[code]}` : `Add ${names[code]}`);
+    b.onclick = () => save({ languages: on ? chosen.filter(c => c !== code) : [...chosen, code] });
+    chips.append(b);
+  } });
+  const more = $('moreLang'); more.innerHTML = '';
+  more.add(new Option('More languages…', ''));
+  for (const [code, name] of [...s.languages].sort((a, b) => a[1].localeCompare(b[1]))) if (!POPULAR.includes(code) && !chosen.includes(code)) more.add(new Option(name, code));
+}
+$('moreLang').addEventListener('change', async () => { const v = $('moreLang').value; if (v) { await save({ languages: [...S.config.languages, v] }); $('moreLang').focus(); } });
+
+// ---- simple fields ----
+for (const id of ['base_url', 'model', 'prompt', 'post_hook']) {
+  $(id).addEventListener('input', () => saveSoon(id, () => $(id).value));
+  $(id).addEventListener('change', () => { clearTimeout(debounced[id]); save({ [id]: $(id).value }); });
+}
+for (const id of ['min_hold', 'timeout', 'silence_stop']) $(id).addEventListener('change', () => save({ [id]: parseFloat($(id).value) }));
+for (const id of ['beeps', 'auto_update', 'local_fallback', 'drop_hallucinations', 'remove_fillers', 'spoken_punctuation', 'auto_submit']) $(id).addEventListener('change', () => save({ [id]: $(id).checked }));
+for (const id of ['hotkey_mode', 'background_audio', 'overlay_style', 'overlay_position']) document.querySelectorAll(`#${id} button`).forEach(b => b.onclick = () => save({ [id]: b.dataset.v }));
+document.querySelectorAll('#live_text button').forEach(b => b.onclick = () => save({ live_text: b.dataset.v === 'live' }));
+
+// ---- shortcut recorder ----
+let recording = false; // the field being recorded, or false
+const REC = { hotkey: { keys: 'heroKeys', btn: 'recKey', msg: 'hotkeyMsg' } }; // an extension can add its own shortcut here
+function stopRec(message) {
+  const r = REC[recording || 'hotkey'];
+  recording = false; $(r.keys).classList.remove('rec');
+  $(r.msg).className = 'note'; $(r.msg).textContent = message || '';
+  $('recKey').textContent = 'Change shortcut';
+  render(S);
+}
+function startRec(field) {
+  if (recording) { const same = recording === field; stopRec(); if (same) return; }
+  const r = REC[field];
+  recording = field; $(r.keys).classList.add('rec'); keycaps([], 'press the new keys…', $(r.keys)); $(r.btn).textContent = 'Cancel';
+  $(r.msg).className = 'note wait'; $(r.msg).textContent = 'A modifier (Alt, Ctrl, Shift, ' + (MAC ? 'Cmd' : 'Win') + ') plus a letter, digit, Space or F-key. Esc cancels.';
+}
+$('recKey').onclick = () => startRec('hotkey');
+function pressKeys(e) {
+  if (recording || !S) return;
+  const held = { alt: e.altKey, ctrl: e.ctrlKey, shift: e.shiftKey, super: e.metaKey };
+  for (const [field, r] of Object.entries(REC)) {
+    const parts = (S.config[field] || '').split('+');
+    document.querySelectorAll(`#${r.keys} .cap`).forEach((cap, i) => {
+      const part = parts[i];
+      const down = part in held ? held[part] : e.type === 'keydown' && (e.code === 'Space' ? 'space' : e.code.replace(/^Key|^Digit/, '').toLowerCase()) === part;
+      cap.classList.toggle('down', !!down);
+    });
+  }
+}
+window.addEventListener('keydown', pressKeys);
+window.addEventListener('keyup', pressKeys);
+window.addEventListener('blur', () => document.querySelectorAll('.keys .cap').forEach(c => c.classList.remove('down')));
+window.addEventListener('keydown', e => {
+  if (!recording) return;
+  e.preventDefault();
+  if (e.key === 'Escape') return stopRec();
+  const mods = [e.altKey && 'alt', e.ctrlKey && 'ctrl', e.shiftKey && 'shift', e.metaKey && 'super'].filter(Boolean);
+  let key = null;
+  if (e.code === 'Space') key = 'space';
+  else if (/^Key[A-Z]$/.test(e.code)) key = e.code.slice(3).toLowerCase();
+  else if (/^Digit\d$/.test(e.code)) key = e.code.slice(5);
+  else if (/^F([1-9]|1[0-2])$/.test(e.code)) key = e.code.toLowerCase();
+  const r = REC[recording];
+  if (!key) { keycaps(mods, mods.length ? '+ …' : 'press the new keys…', $(r.keys)); return; }
+  const field = recording;
+  recording = false;
+  $(r.keys).classList.remove('rec'); $('recKey').textContent = 'Change shortcut'; $(r.msg).textContent = '';
+  save({ [field]: [...mods, key].join('+') });
+}, true);
+
+// ---- the shortcut mode, text clean-ups and pasting ----
+function renderMode(s) {
+  const c = s.config;
+  document.querySelectorAll('#hotkey_mode button').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.v === c.hotkey_mode)));
+  $('modeHint').textContent = { hold: 'Records while you hold the keys, and stops when you let go.',
+    auto: 'A quick tap starts recording and the next tap stops it. Holding longer works like Hold to talk.',
+    toggle: 'Each tap starts or stops recording.' }[c.hotkey_mode];
+  $('silenceRow').hidden = c.hotkey_mode === 'hold';
+  $('silenceHint').textContent = c.silence_stop > 0 ? 'Seconds. It stops by itself after this much quiet once you\'ve spoken, or after 8 seconds if you say nothing.' : 'Seconds; 0 is off, so it stops only when you tap again.';
+}
+function renderText(s) {
+  const c = s.config;
+  for (const id of ['drop_hallucinations', 'remove_fillers', 'spoken_punctuation', 'auto_submit']) $(id).checked = c[id];
+  $('fillerRow').hidden = !c.remove_fillers;
+  requestAnimationFrame(fitFillers);
+  $('spokenWarn').hidden = !c.spoken_punctuation;
+  renderPairs('word_overrides', c.word_overrides);
+}
+function renderPasting(s) {
+  const c = s.config;
+  $('lastRow').hidden = !s.running;
+  $('lastText').textContent = s.last.text || 'Nothing dictated yet.';
+  $('lastText').classList.toggle('empty', !s.last.text);
+  $('copyLast').disabled = !s.last.text;
+  renderPairs('app_rules', c.app_rules);
+  const app = (s.last.app || '').trim().toLowerCase(), has = app && Object.keys(c.app_rules).some(k => k === app);
+  $('addLastApp').hidden = !app || has || !s.focus_detect;
+  $('addLastApp').textContent = `Add a rule for ${app}`;
+  $('noFocus').hidden = s.focus_detect;
+  $('rulesBox').inert = !s.focus_detect;
+  $('submitHint').textContent = 'In chat apps this sends the message at once.' + (s.focus_detect ? ' A rule below can turn it on or off for one app.' : '');
+}
+const RULES = { paste: 'Paste, no Enter', submit: 'Paste + Enter', shift: (MAC ? 'Cmd' : 'Ctrl') + '+Shift+V paste', clipboard: 'Copy only', off: 'Do nothing' };
+const EDITORS = {
+  word_overrides: { box: 'wordRows', key: 'Heard', value: () => Object.assign(document.createElement('input'), { type: 'text', dir: 'auto', placeholder: 'Written' }) },
+  app_rules: { box: 'appRows', key: 'App name', value: () => { const sel = document.createElement('select'); for (const [v, label] of Object.entries(RULES)) sel.add(new Option(label, v)); return sel; } },
+};
+function pairRow(field, k, v) {
+  const e = EDITORS[field], row = document.createElement('div');
+  row.className = 'pair';
+  const key = Object.assign(document.createElement('input'), { type: 'text', dir: 'auto', value: k, placeholder: e.key });
+  key.setAttribute('aria-label', e.key);
+  const val = e.value(); val.value = v; val.setAttribute('aria-label', field === 'app_rules' ? 'What to do' : 'Written');
+  const x = Object.assign(document.createElement('button'), { className: 'btn icon', innerHTML: ICON_X, title: 'Remove' });
+  x.setAttribute('aria-label', 'Remove');
+  x.onclick = () => { const next = row.nextElementSibling || row.previousElementSibling; row.remove(); savePairs(field); (next ? next.querySelector('input') : $(field === 'app_rules' ? 'addApp' : 'addWord')).focus(); };
+  row.append(key);
+  if (field === 'word_overrides') row.append(Object.assign(document.createElement('span'), { className: 'to', textContent: '→' }));
+  row.append(val, x);
+  return row;
+}
+function pairsOf(field) {
+  const out = {};
+  for (const row of $(EDITORS[field].box).children) {
+    const [k, v] = row.querySelectorAll('input, select');
+    if (k.value.trim()) out[k.value.trim()] = v.value.trim();
+  }
+  return out;
+}
+// The same word or app twice can't both be saved: say so, and save nothing until it is fixed
+function duplicates(field) {
+  const seen = new Set(), dups = [];
+  for (const row of $(EDITORS[field].box).children) {
+    const k = row.querySelector('input'), name = k.value.trim().toLowerCase(); // both are matched in any case
+    const dup = !!name && seen.has(name); seen.add(name);
+    k.classList.toggle('dup', dup); if (dup) dups.push(k.value.trim());
+  }
+  const note = $(field === 'app_rules' ? 'appDup' : 'wordDup');
+  note.hidden = !dups.length; note.textContent = dups.length ? `“${dups[0]}” is in the list twice. Change or remove one to save.` : '';
+  return dups.length;
+}
+function savePairs(field) { if (duplicates(field)) return; const v = pairsOf(field); if (JSON.stringify(v) !== JSON.stringify(S.config[field])) save({ [field]: v }); }
+function renderPairs(field, values) {
+  const box = $(EDITORS[field].box);
+  if (box.contains(document.activeElement)) return; // never rebuild under the cursor
+  if (box.querySelector('.dup') || JSON.stringify(pairsOf(field)) === JSON.stringify(values)) return; // keeps rows still being filled in
+  box.textContent = '';
+  for (const [k, v] of Object.entries(values)) box.append(pairRow(field, k, v));
+}
+function addPair(field, k, v) { const row = pairRow(field, k, v); $(EDITORS[field].box).append(row); row.querySelector(k ? 'select, input:not(:first-child)' : 'input').focus(); return row; }
+for (const field of Object.keys(EDITORS)) { $(EDITORS[field].box).addEventListener('change', () => savePairs(field)); $(EDITORS[field].box).addEventListener('input', () => duplicates(field)); }
+function fitFillers() { const t = $('filler_words'); if (!t.offsetParent) return; t.style.height = 'auto'; t.style.height = t.scrollHeight + 2 + 'px'; }
+$('filler_words').addEventListener('input', fitFillers); addEventListener('resize', fitFillers);
+const words = v => v.split(',').map(w => w.trim()).filter(Boolean).join(', ');
+$('filler_words').addEventListener('input', () => saveSoon('filler_words', () => { const v = words($('filler_words').value); return v === S.fillers_default.join(', ') ? '' : v; }));
+$('resetFillers').onclick = () => { $('filler_words').value = S.fillers_default.join(', '); save({ filler_words: '' }); };
+$('addWord').onclick = () => addPair('word_overrides', '', '');
+$('addApp').onclick = () => addPair('app_rules', '', 'paste');
+$('addLastApp').onclick = () => { addPair('app_rules', S.last.app.trim().toLowerCase(), 'paste'); savePairs('app_rules'); };
+$('copyLast').onclick = async () => {
+  const msg = $('lastMsg');
+  try { const r = await api('/api/last/copy', {}); msg.className = r.message ? 'note bad' : 'note ok'; msg.textContent = r.message || 'Copied'; }
+  catch (e) { msg.className = 'note bad'; msg.textContent = e.message; }
+  setTimeout(() => { msg.textContent = ''; }, 2500);
+};
+
+// ---- updates ----
+function renderUpdates(s) {
+  const u = s.update, msg = $('updMsg');
+  if (upd) return; // followUpd draws it
+  $('checkUpd').hidden = false; $('updBar').hidden = true;
+  $('verLine').textContent = `You have version ${s.version}.`;
+  $('auto_update').checked = s.config.auto_update;
+  $('installUpd').hidden = !u.available || !!u.can_update;
+  const failed = /^update failed: /.test(u.status || '');
+  msg.className = failed || updNote ? 'note bad' : 'note';
+  msg.textContent = updNote || (failed ? `Couldn't install ${u.latest.replace(/^v/, '')}: ${u.status.replace(/^update failed: (error: )?/, '')}. Try again with Update now.`
+    : u.can_update ? `Updating from here isn't possible: ${u.can_update}.`
+    : u.available ? `Version ${u.latest.replace(/^v/, "")} is available.` + (u.status && !u.status.endsWith('available') ? ' ' + u.status : '')
+    : u.latest ? 'You have the latest version.' : (u.status || 'Not checked yet.'));
+}
+$('checkUpd').onclick = async () => {
+  updNote = ''; $('checkUpd').disabled = true; $('updMsg').className = 'note wait'; $('updMsg').textContent = 'Checking…';
+  try { S = await api('/api/update/check', {}); render(S); } catch (e) { $('updMsg').className = 'note bad'; $('updMsg').textContent = e.message; }
+  finally { $('checkUpd').disabled = false; }
+};
+// Installing: the percentage while uv works, "Restarting…" while the new version starts, then a tick.
+let updNote = ''; // what went wrong with the last update, kept until the next try
+let upd = null; // { want: '0.5.2', from: '0.5.1', shown: 0, gone: 0 } while an update this page started is under way
+function showUpd(text, pct, done) {
+  const msg = $('updMsg');
+  msg.className = 'note ' + (done ? 'ok' : 'wait');
+  msg.innerHTML = (done ? ICON_OK : '') + '<span></span>'; msg.lastChild.textContent = text;
+  $('updBar').hidden = pct == null; if (pct != null) $('updBar').firstChild.style.width = pct + '%';
+  $('installUpd').hidden = true; $('checkUpd').hidden = !done;
+}
+async function followUpd() {
+  let s;
+  try { s = await api('/api/state'); upd.gone = 0; }
+  catch { // it is restarting; after a minute, say it didn't come back
+    if (!upd) return;
+    upd.gone = upd.gone || Date.now(); upd.restarted = true;
+    if (Date.now() - upd.gone < 60000) { showUpd('Restarting hold-dictate…', 100); setTimeout(followUpd, 500); return; }
+    upd = null; updNote = `hold-dictate didn't come back after the update. Start it again ${where(S)}.`;
+    reachable = false; saveState('offline'); render(S); retry();
+    return;
+  }
+  S = s;
+  if (s.version !== upd.from) { upd = null; render(s); showUpd(`Updated to version ${s.version}.`, null, true); return; }
+  const u = s.update;
+  // failed, or it found nothing to install (progress never started): show what the server says
+  if (u.progress == null && !u.ready && (/failed|cannot/.test(u.status) || Date.now() - upd.started > 4000)) { upd = null; render(s); return; }
+  if (u.progress != null) upd.started = Infinity;
+  if (upd.restarted && !u.ready) { // it came back, but as the old version
+    upd = null; updNote = `The update didn't take: you still have version ${s.version}. Try again with Update now.`; render(s); return;
+  }
+  // uv reports stages, so between them the number creeps on towards the next one instead of sitting still
+  const goal = u.ready ? 100 : (u.progress || 0);
+  const aim = u.ready ? 100 : Math.min(Math.max(goal, upd.shown + 0.8), goal + 12, 99);
+  upd.shown = Math.max(upd.shown, upd.shown + (aim - upd.shown) * 0.45); // never backwards
+  showUpd(u.ready ? 'Restarting hold-dictate…' : `Downloading version ${upd.want}… ${Math.round(upd.shown)}%`, upd.shown);
+  setTimeout(followUpd, 200);
+}
+$('installUpd').onclick = async () => {
+  updNote = ''; const want = (S.update.latest || '').replace(/^v/, '');
+  try { S = await api('/api/update/install', {}); upd = { want, from: S.version, shown: 0, gone: 0, started: Date.now() }; showUpd(`Downloading version ${want}… 0%`, 0); followUpd(); }
+  catch (e) { $('updMsg').className = 'note bad'; $('updMsg').textContent = e.message; }
+};
+$('startSvc').onclick = async () => {
+  $('startSvc').disabled = true;
+  $('svcMsg').className = 'note wait'; $('svcMsg').textContent = 'Starting…';
+  try {
+    const r = await api('/api/service', {});
+    if (r.url) { location.href = r.url; return; } // this page belongs to the stand-alone settings; the app has its own
+    $('svcMsg').className = 'note'; $('svcMsg').textContent = r.message;
+  } catch (e) { $('svcMsg').className = 'note bad'; $('svcMsg').textContent = e.message; }
+  finally { $('startSvc').disabled = false; }
+};
+
+// ---- recording pill preview: the same halftone bars as overlay.qml ----
+const CELL = 2.5, DOT = 2.1, N = Math.floor(192 / (CELL * 4)) | 1, ROWS = Math.floor(40 / CELL), MID = (N - 1) / 2;
+$('pill').innerHTML = '<canvas width="384" height="80"></canvas>';
+const ctx = $('pill').firstChild.getContext('2d');
+let dotColor = '#6b80ff', lineStyle = false;
+const heights = new Array(N).fill(0.4), LN = 27, lineH = new Array(LN).fill(0.03);
+function drawPill() {
+  if (!S) return;
+  const c = S.config, pill = $('pill');
+  pill.style.background = c.overlay_bg;
+  pill.style.setProperty('--s', c.overlay_size * 0.9);
+  pill.style.top = c.overlay_position === 'top' ? '24px' : 'auto';
+  pill.style.bottom = c.overlay_position === 'top' ? 'auto' : '24px';
+  dotColor = c.overlay_bars; lineStyle = c.overlay_style === 'lines'; paintPill();
+}
+function paintPill() {
+  ctx.setTransform(2, 0, 0, 2, 0, 0); ctx.clearRect(0, 0, 192, 40);
+  ctx.fillStyle = dotColor;
+  if (lineStyle) {
+    const x0 = (192 - LN * 6 + 3) / 2;
+    for (let i = 0; i < LN; i++) {
+      const v = lineH[i], h = 3 + v * 30;
+      ctx.globalAlpha = 0.45 + 0.55 * Math.min(1, v * 1.6);
+      ctx.beginPath(); ctx.roundRect(x0 + i * 6, (40 - h) / 2, 3, h, 1.5); ctx.fill();
+    }
+    ctx.globalAlpha = 1;
+    return;
+  }
+  ctx.beginPath();
+  const maxH = ROWS / 2 - 1, x0 = (192 - N * 4 * CELL + CELL) / 2, y0 = (40 - ROWS * CELL) / 2;
+  for (let i = 0; i < N; i++) {
+    const h = Math.max(1, heights[i] * maxH), cx = x0 + i * 4 * CELL;
+    for (let r = 0; r < ROWS; r++) {
+      const y = Math.abs(r + 0.5 - ROWS / 2);
+      if (y > h + 0.5) continue;
+      const sz = DOT * (0.45 + 0.55 * (1 - Math.pow(y / (h + 0.5), 1.4) * 0.85)), off = (CELL - sz) / 2;
+      for (let k = 0; k < 3; k++) ctx.rect(cx + k * CELL + off, y0 + r * CELL + off, sz, sz);
+    }
+  }
+  ctx.fill();
+}
+function frame(now) {
+  requestAnimationFrame(frame);
+  if ($('lookGroup').hidden) return;
+  const tt = now / 1000, env = 0.35 + 0.3 * Math.sin(tt * 2.1) * Math.sin(tt * 3.7) + 0.2 * Math.sin(tt * 7.3);
+  for (let i = 0; i < N; i++) {
+    const d = Math.abs(i - MID), taper = 1 - Math.pow(d / MID, 2) * 0.7;
+    const v = Math.min(1, Math.max(0, 2.4 * env * taper * (0.78 + 0.22 * Math.sin(tt * 9 + i * 1.7)) * (0.7 + 0.3 * Math.sin(tt * 2 - d * 0.5))));
+    heights[i] += (0.035 + v * 0.97 - heights[i]) * 0.25;
+  }
+  const lm = (LN - 1) / 2;
+  for (let i = 0; i < LN; i++) {
+    const d = Math.abs(i - lm), taper = 1 - Math.pow(d / (lm + 1), 2) * 0.55;
+    const v = Math.min(1, Math.max(0, 1.3 * env * taper * (0.78 + 0.22 * Math.sin(tt * 9 + i * 1.7)) * (0.7 + 0.3 * Math.sin(tt * 2 - d * 0.4))));
+    lineH[i] += (v - lineH[i]) * 0.25;
+  }
+  paintPill();
+}
+if (!matchMedia('(prefers-reduced-motion: reduce)').matches) requestAnimationFrame(frame); else paintPill();
+for (const id of ['overlay_bg', 'overlay_bars']) {
+  $(id).addEventListener('input', () => { S.config[id] = $(id).value; drawPill(); });
+  $(id).addEventListener('change', () => save({ [id]: $(id).value }));
+}
+$('overlay_size').addEventListener('input', () => { S.config.overlay_size = parseFloat($('overlay_size').value); drawPill(); });
+$('overlay_size').addEventListener('change', () => save({ overlay_size: parseFloat($('overlay_size').value) }));
+for (const [v, name] of [['#6b80ff', 'Blue'], ['#ffffff', 'White'], ['#4cc38a', 'Green'], ['#ffb020', 'Amber'], ['#ff6b8b', 'Pink'], ['#b18cff', 'Violet']]) {
+  const b = document.createElement('button');
+  b.type = 'button'; b.dataset.v = v; b.title = name; b.setAttribute('aria-label', name); b.style.background = v;
+  b.onclick = () => save({ overlay_bars: v });
+  $('swatches').insertBefore(b, $('swatches').querySelector('label'));
+}
+$('resetLook').onclick = () => save({ overlay_bg: '#0a0a0b', overlay_bars: '#6b80ff', overlay_position: 'bottom', overlay_size: 1, overlay_style: 'dots' });
+
+// ---- the hero's halftone waveform, the same dots as the recording pill ----
+// It scrolls like a recording of someone talking: syllables of different length and strength,
+// short gaps between words, longer pauses between sentences.
+const wave = $('wave'), wctx = wave.getContext('2d'), WCELL = 6, STEP = 70; // px per dot, ms per column
+const rand = (lo, hi) => lo + Math.random() * (hi - lo);
+const voice = { left: 0, len: 1, peak: 0, gap: 0, words: 0, syllables: 0 };
+function nextLevel() {
+  const v = voice;
+  if (v.gap > 0) { v.gap -= STEP; return rand(0, 0.05); }
+  if (v.left <= 0) {
+    if (v.syllables <= 0) {
+      if (v.words <= 0) { v.words = Math.round(rand(3, 8)); v.gap = rand(500, 1200); return 0; } // end of a sentence
+      v.words--; v.syllables = Math.round(rand(1, 4));
+      if (Math.random() < 0.7) { v.gap = rand(110, 260); return 0; } // between words
+    }
+    v.syllables--;
+    v.len = v.left = rand(150, 330);
+    v.peak = rand(0.3, 1) * (v.syllables === 0 && Math.random() < 0.4 ? 0.6 : 1);
+  }
+  v.left -= STEP;
+  const t = 1 - Math.max(v.left, 0) / v.len; // 0..1 through the syllable: quick rise, slower fall
+  // syllables in a word run into each other; only words and sentences have silence between them
+  return v.peak * (0.3 + 0.7 * Math.pow(Math.sin(Math.PI * Math.min(1, t * 1.1)), 0.7)) * rand(0.8, 1);
+}
+let levels = [], lastStep = 0, smooth = 1;
+function drawWave(now) {
+  const r = devicePixelRatio || 1, w = wave.clientWidth, h = wave.clientHeight;
+  if (!w) return;
+  if (wave.width !== Math.round(w * r)) { wave.width = Math.round(w * r); wave.height = Math.round(h * r); }
+  const cols = Math.floor(w / WCELL), rows = Math.floor(h / WCELL), mid = rows / 2;
+  while (levels.length < cols) levels.unshift(nextLevel()); // a page that opens mid-sentence
+  if (levels.length > cols) levels = levels.slice(-cols);
+  const blocked = $('status').classList.contains('warn');
+  if (!blocked && now - lastStep > STEP * 8) lastStep = now;
+  while (!blocked && now - lastStep >= STEP) { lastStep += STEP; levels.shift(); levels.push(0.35 * levels[levels.length - 1] + 0.65 * nextLevel()); } // a voice does not jump from column to column
+  smooth = still ? +!blocked : smooth + (+!blocked - smooth) * 0.08; // eases flat when dictation stops working, and back
+  wctx.setTransform(r, 0, 0, r, 0, 0); wctx.clearRect(0, 0, w, h);
+  const css = getComputedStyle(document.documentElement), ink = css.getPropertyValue('--accent'), dim = css.getPropertyValue(blocked ? '--edge' : '--line-2');
+  for (let i = 0; i < cols; i++) {
+    const amp = Math.max(0.6, Math.min(1, levels[i] * 1.3) * smooth * mid * 0.95);
+    for (let j = 0; j < rows; j++) {
+      const d = Math.abs(j + 0.5 - mid);
+      if (d > amp) continue;
+      const core = !blocked && d < amp * 0.5 && amp > 1;
+      wctx.fillStyle = core ? ink : dim;
+      const sz = core ? 3 : 2.4;
+      wctx.fillRect(i * WCELL + (WCELL - sz) / 2, j * WCELL + (WCELL - sz) / 2, sz, sz);
+    }
+  }
+}
+const still = matchMedia('(prefers-reduced-motion: reduce)').matches;
+(function loop(now) { drawWave(now || 0); if (!still) requestAnimationFrame(loop); })();
+addEventListener('resize', () => drawWave(performance.now()));
+
+</script>
+<!--extension scripts-->
+<script>
+// ---- start ----
+addEventListener('scroll', floatSave, { passive: true });
+saveState('idle');
+$('lastProblemClear').onclick = () => api('/api/problem/clear', {}).then(() => showProblem(null)).catch(() => {});
+const refresh = () => api('/api/state').then(s => { S = s; render(s); if ($('save').classList.contains('failed')) saveState('idle'); }).catch(() => {}); // the hero and the stale banner already say what went wrong
+if (S) render(S); else refresh();
+hook(pageHooks.starts);
+window.addEventListener('focus', () => { if (!recording && !document.activeElement.matches('input[type=text], input[type=password], input[type=number]')) refresh(); });
+</script>
+</body>
+</html>

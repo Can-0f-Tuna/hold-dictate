@@ -1,0 +1,20 @@
+# Notices
+
+The way hold-dictate tells you something on screen: a small "!" ball that comes from the pill. One QML file per notice; `overlay.qml` creates them and routes the daemon's events to them.
+
+| Notice | File | Event | What it does |
+| --- | --- | --- | --- |
+| Update | `UpdateNotice.qml` | `U <version\|->`, `D`, `F` | A "!" tab on the pill. A click installs the update, with a chip in the corner of the screen |
+| Problem | `ProblemNotice.qml` | `E <alert\|mic\|net>` | The pill's bars settle into a flat line and turn red, and a mark appears beside the pill: a crossed-out microphone or network sign, or a "!". After about 2.6 seconds both close; the mouse on the mark keeps them open. A click opens the settings, which explain the problem |
+
+To add one:
+
+1. Add `notices/YourNotice.qml`. Take the overlay as `required property var shell` for the look (`pillColor`, `barColor`, `sizeScale`, `atTop`, `pillCY`).
+2. Choose a letter for its event and handle it in `handle()` in `overlay.qml`; list it in the comment at the top of that file. Old overlays ignore letters they do not know.
+3. Send the event from `feedback.py`. The overlay can start after the first line was written, so send it again with each dictation until the notice is done.
+4. Keep it light: animate item properties (position, scale, rotation, opacity) rather than repainting a Canvas, and stop every animation when the notice waits. Load a big notice with `LazyLoader`, so it costs nothing until it plays.
+5. Stay out of the way: take clicks only on the notice's own items, through the window's `mask`.
+
+An extension brings its own notices through its `notices()` hook: QML files outside this folder. Each is created with `shell` set, as above, and needs a `handle(parts)` function, which gets every event line split into words.
+
+Windows and macOS have no overlay, so a notice falls back to a system notification there.
