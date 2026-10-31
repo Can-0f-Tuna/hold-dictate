@@ -3,6 +3,7 @@ import getpass
 import importlib.util
 import json
 import sys
+import time
 import urllib.request
 
 from . import __version__, config as cfgmod, extensions, service
@@ -89,47 +90,52 @@ def cmd_setup(args) -> int:
     return 0
 
 
-def cmd_doctor(_args) -> int:
-    from .hotkey import choose_backend, parse_hotkey
-    from .paste import missing_tools
-    from .providers import LocalTranscriber, check_api
-    ok = True
-
-    def line(good, text, fix=""):
-        nonlocal ok
-        ok = ok and good
-        print(f"  {'OK ' if good else 'FIX'}  {text}" + (f"\n         {fix}" if fix and not good else ""))
-
+def cmd_doctor(args) -> int:
+    from . import health
     cfg = cfgmod.load()
+    rows = health.checks(cfg, online=not args.offline)
+    ok = all(row["ok"] for row in rows)
+    if args.json:
+        print(json.dumps({"ok": ok, "checks": rows}))
+        return 0 if ok else 1
     print(f"hold-dictate {__version__} on {sys.platform}, config {cfgmod.config_path()}\n")
-    try:
-        parse_hotkey(cfg.hotkey)
-        line(True, f"hotkey {cfg.hotkey}")
-    except ValueError as e:
-        line(False, f"hotkey: {e}", "Fix `hotkey` in the config.")
-    backend, problem = choose_backend()
-    line(backend is not None, f"keyboard access ({backend.name if backend else 'none'})", problem)
-    try:
-        import sounddevice as sd
-        has_mic = any(d["max_input_channels"] > 0 for d in sd.query_devices())
-        line(has_mic, "microphone found", "Plug in or enable a microphone.")
-    except Exception as e:
-        hint = "Linux: install libportaudio2 (apt) / portaudio (dnf, pacman)." if sys.platform.startswith("linux") else ""
-        line(False, f"audio: {e}", hint)
-    if cfg.background_audio != "off":
-        from . import ducking
-        line(ducking.available(), "turning other apps down while you dictate", "Linux: install pactl (pulseaudio-utils), or set background_audio = \"off\".")
-    tools = missing_tools()
-    line(not tools, "paste helpers installed", f"Install: {', '.join(tools)}")
-    for row in extensions.doctor_lines():
-        line(*row)
-    if cfg.provider == "local":
-        line(LocalTranscriber.available(), "local model library", 'uv tool install --force "hold-dictate[local]"')
-    else:
-        problem = check_api(cfg)
-        line(not problem, f"{cfg.preset()['label']} API key", problem or "Run `hold-dictate settings`.")
+    for row in rows:
+        print(f"  {'OK ' if row['ok'] else 'FIX'}  {row['text']}" + (f"\n         {row['fix']}" if row["fix"] else ""))
     print("\nAll good." if ok else "\nFix the items marked FIX, then run this again.")
     return 0 if ok else 1
+
+
+def _plain(text: str) -> str:
+    """Dictated text on one line, with nothing a terminal would obey."""
+    return "".join(c if c.isprintable() else " " for c in text)
+
+
+def cmd_history(args) -> int:
+    from . import history
+    cfg = cfgmod.load()
+    if args.action == "clear":
+        if args.yes or yes("Delete every saved dictation?", False):
+            history.clear()
+            print("History cleared.")
+        return 0
+    if args.action == "delete":
+        found = bool(args.value) and history.delete(args.value)
+        print("Deleted." if found else "No dictation has that id.")
+        return 0 if found else 1
+    if args.action == "search" and not args.value:
+        print("Say what to search for: hold-dictate history search WORDS")
+        return 1
+    rows = history.entries(cfg, args.value or "" if args.action == "search" else "")
+    if hasattr(sys.stdout, "reconfigure"):
+        sys.stdout.reconfigure(errors="replace")  # a console that can't show Hebrew
+    for row in rows[:args.limit]:
+        when = time.strftime("%Y-%m-%d %H:%M", time.localtime(row["time"]))
+        print(f"{row['id']}  {when}  {_plain(row['app']) or '-'}\n  {_plain(row['text'])}")
+    if not rows:
+        print("Nothing found." if args.action == "search" else "The history is empty." if history.days(cfg) else "The history is empty, and off. Turn it on in the settings.")
+    elif len(rows) > args.limit:
+        print(f"... and {len(rows) - args.limit} older (--limit shows more)")
+    return 0
 
 
 def cmd_file(args) -> int:
@@ -154,7 +160,6 @@ def cmd_settings(args, anchor: str = "", alongside=None) -> int:
     """`anchor` goes on the page's address. `alongside` runs next to opening it: opening a browser that isn't
     running yet can take as long as the browser runs."""
     import threading
-    import time
     import webbrowser
     from .settings_ui import SettingsServer, running_url
 
@@ -262,13 +267,22 @@ def main(argv=None) -> int:
     st = sub.add_parser("settings", help="open the settings page in your browser")
     st.add_argument("--wait", type=float, default=0, help="seconds to wait for hold-dictate to start")
     st.set_defaults(fn=cmd_settings)
-    sub.add_parser("doctor", help="check that everything is in place").set_defaults(fn=cmd_doctor)
+    d = sub.add_parser("doctor", help="check that everything is in place")
+    d.add_argument("--offline", action="store_true", help="stay on this computer: the key is not tried with the service")
+    d.add_argument("--json", action="store_true", help="print the results as JSON")
+    d.set_defaults(fn=cmd_doctor)
     f = sub.add_parser("transcribe", help="transcribe a WAV file and print it")
     f.add_argument("path")
     f.set_defaults(fn=cmd_file)
     sub.add_parser("update", help="install the latest release now").set_defaults(fn=cmd_update)
     for action in ("paste", "copy"):
         sub.add_parser(f"{action}-last", help=f"{action} the last dictation again").set_defaults(fn=cmd_last, action=action)
+    h = sub.add_parser("history", help="list, search, delete or clear saved dictations")
+    h.add_argument("action", nargs="?", default="list", choices=["list", "search", "delete", "clear"])
+    h.add_argument("value", nargs="?", help="what to search for, or the id to delete")
+    h.add_argument("--limit", type=int, default=20, help="how many to show")
+    h.add_argument("-y", "--yes", action="store_true", help="clear without asking")
+    h.set_defaults(fn=cmd_history)
     sub.add_parser("config", help="print the config file path").set_defaults(fn=cmd_config)
     sv = sub.add_parser("service", help="manage start-at-login")
     sv.add_argument("action", choices=["install", "uninstall", "status"])

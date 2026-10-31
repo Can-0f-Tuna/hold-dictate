@@ -15,8 +15,8 @@ from dataclasses import asdict, fields
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
-from . import __version__, config as cfgmod, ducking, extensions, textproc
-from .config import APP_RULES, DUCK_MODES, HOTKEY_MODES, LANGUAGES, LOCAL_MODELS, OVERLAY_STYLES, PROVIDERS, Config
+from . import __version__, config as cfgmod, ducking, extensions, health, history, textproc
+from .config import APP_RULES, DUCK_MODES, HISTORY_DAYS, HOTKEY_MODES, LANGUAGES, LOCAL_MODELS, OVERLAY_STYLES, PROVIDERS, Config
 
 PAGE = Path(__file__).with_name("settings.html")
 REOPEN = {"linux": "from your app menu (hold-dictate settings)", "darwin": "from the hold-dictate icon in the menu bar"}
@@ -42,6 +42,7 @@ code {{ font:500 .9em ui-monospace,Menlo,Consolas,monospace; background:var(--so
 FONTS = {"/fonts/geist.woff2": "geist-latin.woff2", "/fonts/geist-mono.woff2": "geist-mono-latin.woff2"}
 PORT = 47811
 SECRET_FIELDS = {"api_key"}
+HISTORY_ROWS = 200  # shown on the page at a time; search reaches the rest
 EDITABLE = {f.name for f in fields(Config)} - {"idle_unload_seconds", "api_key_service", "extra"}
 
 
@@ -186,6 +187,8 @@ class SettingsServer:
             raise ValueError("style must be " + " or ".join(OVERLAY_STYLES))
         if new.hotkey_mode not in HOTKEY_MODES:
             raise ValueError("hotkey mode must be " + ", ".join(HOTKEY_MODES))
+        if "history_days" in changes and new.history_days not in HISTORY_DAYS:
+            raise ValueError("history must be kept for " + ", ".join(map(str, HISTORY_DAYS)) + " days")
         new.silence_stop = min(60.0, max(0.0, new.silence_stop))
         new.word_overrides = {k.strip(): v for k, v in new.word_overrides.items() if k.strip()}
         new.app_rules = {k.strip().lower(): v for k, v in new.app_rules.items() if k.strip()}
@@ -211,6 +214,8 @@ class SettingsServer:
             for f in fields(Config):
                 setattr(self.cfg, f.name, getattr(new, f.name))
             self.on_saved(self.cfg)
+        if "history_days" in changes:
+            history.prune(self.cfg)
         return self.state()
 
     def test_key(self, changes: dict) -> dict:
@@ -241,6 +246,25 @@ class SettingsServer:
             return {"message": "hold-dictate is not running"}
         note = self.session.copy_last() if action == "copy" else self.session.paste_last()
         return {"message": note or ""}
+
+    def history_list(self, body: dict) -> dict:
+        rows = history.entries(self.cfg, str(body.get("q", "")))
+        return {"entries": rows[:HISTORY_ROWS], "total": len(rows)}
+
+    def history_copy(self, body: dict) -> dict:
+        from .paste import copy_text
+        wanted = str(body.get("id", ""))
+        row = next((r for r in history.entries(self.cfg) if r["id"] == wanted), None)
+        if row is None:
+            raise ValueError("that dictation is no longer in the history")
+        return {"message": copy_text(row["text"])}
+
+    def history_delete(self, body: dict) -> dict:
+        return {"deleted": history.delete(str(body.get("id", "")))}
+
+    def history_clear(self) -> dict:
+        history.clear()
+        return {"deleted": True}
 
     def clear_problem(self) -> dict:
         if self.session:
@@ -278,6 +302,7 @@ class _Handler(BaseHTTPRequestHandler):
         self.send_header("Cache-Control", "no-store")
         self.send_header("Referrer-Policy", "no-referrer")
         self.send_header("X-Frame-Options", "DENY")
+        self.send_header("X-Content-Type-Options", "nosniff")
         self.end_headers()
         self.wfile.write(body)
 
@@ -290,7 +315,8 @@ class _Handler(BaseHTTPRequestHandler):
             token = dict(p.partition("=")[::2] for p in query.split("&") if p).get("t", "")
             if not self._allowed(token):
                 return self._send(403, STALE_PAGE, "text/html; charset=utf-8")
-            state = json.dumps(self.app.state(), ensure_ascii=False).replace("</", "<\\/")
+            # it lands inside a <script>, and dictated text can hold "</script>" or "<!--"
+            state = json.dumps(self.app.state(), ensure_ascii=False).replace("<", "\\u003c")
             sections, scripts = extensions.settings_page()
             page = PAGE.read_text(encoding="utf-8").replace("<!--extension sections-->", sections).replace("<!--extension scripts-->", scripts)
             page = page.replace("/*STATE*/null", state, 1)
@@ -305,6 +331,8 @@ class _Handler(BaseHTTPRequestHandler):
             return self._json({"app": "hold-dictate", "version": __version__})
         if path == "/api/state":
             return self._json(self.app.state())
+        if path == "/api/health":
+            return self._json(health.report())
         self._json({"error": "not found"}, 404)
 
     def do_POST(self):
@@ -324,6 +352,10 @@ class _Handler(BaseHTTPRequestHandler):
                 "/api/problem/clear": self.app.clear_problem,
                 "/api/last/copy": lambda: self.app.last("copy"),
                 "/api/last/paste": lambda: self.app.last("paste"),
+                "/api/history": lambda: self.app.history_list(body),
+                "/api/history/copy": lambda: self.app.history_copy(body),
+                "/api/history/delete": lambda: self.app.history_delete(body),
+                "/api/history/clear": self.app.history_clear,
             }
             route = routes.get(self.path) or self.app.routes.get(f"POST {self.path}")
             if route is None:

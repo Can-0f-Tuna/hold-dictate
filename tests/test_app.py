@@ -33,6 +33,11 @@ class FakeRecorder:
     def __init__(self, on_level):
         t = np.arange(audio.SAMPLE_RATE) / audio.SAMPLE_RATE
         self.audio = (np.sin(2 * np.pi * 220 * t) * 0.3).astype(np.float32)
+        self.started = time.monotonic()
+
+    @property
+    def samples(self):  # the whole clip has arrived, and more keeps coming
+        return 32000 + int((time.monotonic() - self.started) * audio.SAMPLE_RATE)
 
     def stop(self):
         return np.concatenate([np.zeros(8000, np.float32), self.audio, np.zeros(8000, np.float32)])
@@ -429,10 +434,7 @@ def test_live_typing_stays_out_of_the_way_of_what_changes_the_text(api, settings
 
 
 def test_a_dead_microphone_is_explained(api):
-    class Muted:
-        def __init__(self, on_level):
-            pass
-
+    class Muted(FakeRecorder):
         def stop(self):
             return np.zeros(audio.SAMPLE_RATE * 2, np.float32)
     d, _, fb = dictation(cfg_for(api, min_hold=0), recorder=Muted)

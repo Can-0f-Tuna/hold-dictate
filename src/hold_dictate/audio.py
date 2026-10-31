@@ -1,5 +1,6 @@
 """Microphone capture and the small signal helpers around it."""
 import io
+import sys
 import threading
 import wave
 
@@ -7,6 +8,7 @@ import numpy as np
 
 SAMPLE_RATE = 16000
 BLOCK = 320  # 20 ms
+CLOSE_WAIT = 0.04  # stop() returns after this long even if the device won't let go
 
 
 class Problem(RuntimeError):
@@ -25,6 +27,8 @@ class MicError(Problem):
 class Recorder:
     """Captures 16 kHz mono audio until stop(), reporting loudness (0..1) to on_level as it goes."""
 
+    closing = None  # the thread closing the last stream; PortAudio can't open one at the same time
+
     def __init__(self, on_level=None):
         try:
             import sounddevice as sd
@@ -33,6 +37,9 @@ class Recorder:
         self.on_level = on_level
         self.live = threading.Event()  # set at the first real sound; a Bluetooth mic gives none for over half a second
         self.chunks: list[np.ndarray] = []
+        self.samples = 0  # how many have arrived
+        if Recorder.closing:
+            Recorder.closing.join(0.5)
         try:
             self.stream = sd.InputStream(
                 samplerate=SAMPLE_RATE, channels=1, dtype="int16", blocksize=BLOCK, callback=self._callback
@@ -44,6 +51,7 @@ class Recorder:
     def _callback(self, indata, frames, time_info, status):
         samples = indata[:, 0].copy()
         self.chunks.append(samples)
+        self.samples += len(samples)
         if not self.live.is_set() and samples.any():
             self.live.set()
         if self.on_level:
@@ -57,9 +65,18 @@ class Recorder:
         return np.concatenate(chunks).astype(np.float32) / 32768
 
     def stop(self) -> np.ndarray:
-        self.stream.stop()
-        self.stream.close()
+        """Returns what arrived. A stalled device can hang stream.stop() for good, so closing has its own thread."""
+        Recorder.closing = threading.Thread(target=self._close, daemon=True)
+        Recorder.closing.start()
+        Recorder.closing.join(CLOSE_WAIT)
         return self.snapshot()
+
+    def _close(self):
+        try:
+            self.stream.stop()
+            self.stream.close()
+        except Exception as e:
+            print(f"hold-dictate: closing the microphone: {e}", file=sys.stderr, flush=True)
 
 
 def level_of(samples: np.ndarray) -> float:
@@ -138,6 +155,12 @@ def speech_only(audio: np.ndarray, pad_ms=200, gap_ms=500, frame_ms=30):
         padded[:-shift] |= keep[shift:]
     mask = np.repeat(padded, frame)
     return audio[: n * frame][mask]
+
+
+def without_empty_tail(audio: np.ndarray, released: int) -> np.ndarray:
+    """The audio after the release only finishes a word. With no speech before it, it is a key click, the stop
+    sound or the music coming back, and must not turn a silent clip into text."""
+    return audio if speech_only(audio[:released]) is not None else audio[:released]
 
 
 def wav_bytes(audio: np.ndarray) -> bytes:

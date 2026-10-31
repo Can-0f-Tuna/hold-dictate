@@ -128,6 +128,7 @@ HOTKEY_MODES = ("hold", "auto", "toggle")
 # What to do in a given app: paste (Ctrl+V, never Enter), submit (paste, then Enter), shift (Ctrl+Shift+V),
 # clipboard (only copy, you paste), off (nothing).
 APP_RULES = ("paste", "submit", "shift", "clipboard", "off")
+HISTORY_DAYS = (0, 1, 7, 30, 90, 365)  # how long dictations are kept; 0 = Off, nothing new is saved
 OLD_KEYS = ("language", "sounds")  # read once by load() and then dropped; any other unknown key is kept
 
 
@@ -179,6 +180,7 @@ class Config:
     word_overrides: dict = field(default_factory=dict)  # heard -> written; empty written deletes the word
     auto_submit: bool = False  # press Enter after every paste (per-app rules can say otherwise)
     app_rules: dict = field(default_factory=dict)  # app name -> paste | submit | shift | clipboard | off
+    history_days: float = 7.0  # keep dictated text on this computer this long; 0 = Off. load() has the rule for older configs
     post_hook: str = ""  # shell command: gets the text on stdin, its output is pasted; exit 77 pastes nothing
     extra: dict = field(default_factory=dict)  # keys of the file this version doesn't know: extensions own them, and they stay
 
@@ -230,6 +232,8 @@ def load(path: Path | None = None) -> Config:
         if "sounds" in data and "beeps" not in data:
             # Before 0.5.2 `sounds` never played while the recording pill was showing, so it starts off there.
             cfg.beeps = bool(data["sounds"]) and not pill_available()
+        if "history_days" not in data:
+            cfg.history_days = 0.0  # a config from before there was a history: never start keeping text unasked
         if cfg.api_key and "api_key_service" not in data:
             cfg.api_key_service = cfg.provider  # before 0.5 the key always belonged to the saved provider
     return cfg

@@ -4,7 +4,7 @@ import sys
 import threading
 import time
 
-from . import audio, extensions, paste, textproc
+from . import audio, extensions, history, paste, textproc
 from .ducking import Ducker
 from .config import Config
 from .feedback import Feedback
@@ -29,6 +29,34 @@ def transcribe(cfg: Config, local: LocalTranscriber, speech) -> tuple[str, str]:
 TAP_SECONDS = 0.4  # auto mode: a press shorter than this keeps recording until the next press
 NO_SPEECH_SECONDS = 8.0  # with silence_stop on, a recording where nothing is said stops after this
 MIC_WAIT = 1.5  # the start cue comes when the mic is live, or after this long if it never says so
+TAIL_SECONDS = 0.2  # recording goes on this long after the release: people let go before the last word ends
+TAIL_GRACE = 0.04  # a stalled stream gets this much more; with audio.CLOSE_WAIT, a clip ends within tail + 100 ms
+PRUNE_SECONDS = 3600  # how often old history is cleared out, for days with no dictation
+
+
+class Tail:
+    """The end of a recording: the key is up and the mic stays on until `run_out` is done."""
+
+    def __init__(self, recorder, seconds: float):
+        self.recorder = recorder
+        self.released = recorder.samples  # where the key came up
+        self.wanted = self.released + int(seconds * audio.SAMPLE_RATE)
+        self.ends = time.monotonic() + seconds
+        self.limit = self.ends + TAIL_GRACE if seconds else self.ends
+        self.cut = threading.Event()  # the next press: stop now
+        self.stopped = threading.Event()
+
+    def run_out(self):
+        while True:
+            now = time.monotonic()
+            if now >= self.limit or (now >= self.ends and self.recorder.samples >= self.wanted):
+                break
+            if self.cut.wait(0.01):
+                break
+        try:
+            return self.recorder.stop()
+        finally:
+            self.stopped.set()
 
 
 class Dictation:
@@ -45,6 +73,7 @@ class Dictation:
         self.copier = copier or paste.copy_text
         self.second_work = None  # what takes a recording made with the second hotkey; None for a dictation
         self.recorder = None
+        self.tail = None  # the last recording, while it runs out
         self.live = None  # types while you speak, when turned on
         self.live_app = ""
         self.latched = False  # auto and toggle: the key is up but the recording goes on
@@ -57,6 +86,7 @@ class Dictation:
         self.lock = threading.RLock()
         self.paste_lock = threading.Lock()
         self.threads: list[threading.Thread] = []
+        self.pruned = time.monotonic() - PRUNE_SECONDS  # the first tick does it; the clock can start at boot
 
     # Called by the hotkey backend: "start" when the hotkey goes down, "stop" when it comes up, and
     # "second:start" and "second:stop" for the second hotkey, if an extension added one.
@@ -95,6 +125,7 @@ class Dictation:
             if self.on_no_key:
                 self.on_no_key()
             return
+        self._cut_tail()
         self.voice = audio.VoiceMeter()
         try:
             self.recorder = self.recorder_factory(self._level)
@@ -106,7 +137,8 @@ class Dictation:
         self.pressed_at = self.last_used = time.monotonic()
         threading.Thread(target=self._cue_when_live, args=(self.recorder,), daemon=True).start()
         if self._types_live():
-            self.live = LiveTyper(self.recorder, self._transcribe_live, lambda raw: textproc.clean(raw, self.cfg), self._type_live,
+            app = self.live_app  # the next recording has its own
+            self.live = LiveTyper(self.recorder, self._transcribe_live, lambda raw: textproc.clean(raw, self.cfg), lambda text: self._type_live(text, app),
                                   ready=lambda: sys.platform.startswith("linux") or self.latched,
                                   **({"gap": 1.0, "per_minute": 0} if self.cfg.provider == "local" else {}))
             self.live.start()
@@ -139,32 +171,51 @@ class Dictation:
                     continue
                 limit = self.cfg.silence_stop if self.voice.heard else max(self.cfg.silence_stop, NO_SPEECH_SECONDS)
                 if time.monotonic() - (self.voice.last if self.voice.heard else self.pressed_at) >= limit:
-                    self.finish()
+                    self.finish(tail=False)  # it stopped because you went quiet: no word is left to catch
                     return
 
-    def finish(self):
-        """Stops the recording, if any, and transcribes it in the background."""
+    def finish(self, tail: bool = True):
+        """Ends the recording, if any. What you hear and see happens now; the mic stays on for the tail in the
+        background, then the clip is transcribed there."""
         with self.lock:
             if self.recorder is None:
                 return
-            live, self.live = self.live, None
-            recording, self.recorder, self.latched = self.recorder.stop(), None, False
+            recorder, live = self.recorder, self.live
+            self.recorder, self.live, self.latched = None, None, False
+            if live:
+                live.stop()  # the last pass has the rest
             self.ducker.restore()
             if time.monotonic() - self.pressed_at < self.cfg.min_hold:
-                if live:
-                    live.stop()
+                recorder.stop()
                 self.fb.done()
                 return
             self._cue()  # let go before the mic was live: the pill still opens, to show the work
             self.fb.working()
-            work, second = self.process, self.second_work
-            if second:
-                work = lambda r: self.process_second(second, r)
-            elif live:
-                work = lambda r: self.process_live(r, live)
-            worker = threading.Thread(target=work, args=(recording,), daemon=True)
+            recorder.on_level = None
+            self.tail = Tail(recorder, TAIL_SECONDS if tail else 0)
+            worker = threading.Thread(target=self._run_out, args=(self.tail, live, self.second_work, self.live_app), daemon=True)
             worker.start()
             self.threads.append(worker)
+
+    def _cut_tail(self):
+        """A new press: the old clip ends here, whole, and the new one starts after it."""
+        if self.tail:
+            self.tail.cut.set()
+            self.tail.stopped.wait(1)
+
+    def _run_out(self, tail, live, second, app):
+        recording = tail.run_out()
+        with self.lock:  # after `stopped` is set, so _cut_tail can wait for it while holding the lock
+            if self.tail is tail:
+                self.tail = None
+        if live:
+            self.process_live(recording, live, tail.released, app)
+            return
+        recording = audio.without_empty_tail(recording, tail.released)
+        if second:
+            self.process_second(second, recording)
+        else:
+            self.process(recording)
 
     def transcribe(self, speech) -> tuple[str, str]:
         return transcribe(self.cfg, self.local, speech)
@@ -181,16 +232,16 @@ class Dictation:
         self.live_app = self.focus()
         return paste.rule_for(self.cfg.app_rules, self.live_app) not in ("off", "clipboard")
 
-    def _type_live(self, text: str) -> str:
-        rule = paste.rule_for(self.cfg.app_rules, self.live_app)
+    def _type_live(self, text: str, app: str) -> str:
+        rule = paste.rule_for(self.cfg.app_rules, app)
         with self.paste_lock:
-            return self.paster(text, app=self.live_app, shift={"shift": True, "paste": False}.get(rule), submit=False)
+            return self.paster(text, app=app, shift={"shift": True, "paste": False}.get(rule), submit=False)
 
-    def process_live(self, recording, live):
+    def process_live(self, recording, live, released, app):
         """The end of a recording typed live: the rest of the words, then what a paste would have done."""
-        started, app = time.monotonic(), self.live_app
+        started = time.monotonic()
         try:
-            text = live.finish(recording, lambda speech: self.transcribe(speech)[0])
+            text = live.finish(recording, lambda speech: self.transcribe(speech)[0], released)
         except Exception as e:
             self._fail(e)
             return
@@ -202,7 +253,7 @@ class Dictation:
             self.copier(text)
             self.fb.error(live.note)
             return
-        if not text and audio.is_dead(recording):
+        if not text and audio.is_dead(recording[:released]):
             self.fb.error("The microphone is silent. Check that it isn't muted.", icon="mic")
             return
         self.fb.done()
@@ -212,6 +263,7 @@ class Dictation:
         rule = paste.rule_for(self.cfg.app_rules, app)
         if rule == "submit" or (self.cfg.auto_submit and rule != "paste"):
             paste.press_enter()
+        self._remember(text, text, app)
         extensions.after_dictation(self, recording, text, text, text, app)
 
     def _fail(self, e: Exception):
@@ -246,8 +298,15 @@ class Dictation:
                 print("hold-dictate: the text hook asked not to paste this", flush=True)
                 return
         self.last_text, self.last_app = text, app
-        self.deliver(text, app)
+        if self.deliver(text, app):
+            self._remember(text, raw, app)
         extensions.after_dictation(self, recording, raw, dictated, text, app)
+
+    def _remember(self, text: str, raw: str, app: str):
+        try:
+            history.add(self.cfg, text, raw, app)
+        except Exception as e:  # the text is already where it belongs
+            print(f"hold-dictate: could not save to the history: {e}", file=sys.stderr, flush=True)
 
     def process_second(self, work, recording):
         """The second hotkey's recording, in the hands of the extension that added it."""
@@ -256,10 +315,11 @@ class Dictation:
         except Exception as e:
             self._fail(e)
 
-    def deliver(self, text: str, app: str, submit_allowed: bool = True):
+    def deliver(self, text: str, app: str, submit_allowed: bool = True) -> bool:
+        """Returns True when the text was pasted into the app."""
         rule = paste.rule_for(self.cfg.app_rules, app)
         if rule == "off":
-            return
+            return False
         if rule == "clipboard":
             note = self.copier(text)
         else:
@@ -271,6 +331,7 @@ class Dictation:
             self.fb.error(note)
         else:
             self.fb.clear_problem()
+        return not note and rule != "clipboard"
 
     def paste_last(self) -> str:
         """Pastes the last dictation again into the focused app (never presses Enter)."""
@@ -292,7 +353,10 @@ class Dictation:
             return self.recorder is None and not self.threads
 
     def tick(self):
-        """Frees the local model after a long idle stretch."""
+        """Frees the local model after a long idle stretch, and clears out history that has reached its age."""
+        if time.monotonic() - self.pruned >= PRUNE_SECONDS:
+            self.pruned = time.monotonic()
+            history.prune(self.cfg)
         if self.local.model is not None and self.recorder is None:
             if time.monotonic() - self.last_used >= self.cfg.idle_unload_seconds:
                 self.local.unload()
@@ -348,8 +412,7 @@ def run(cfg: Config) -> int:
     def listen():
         if backend is None:
             while not done.wait(5):
-                updater.tick()
-                extensions.tick()
+                tick()
             return
         try:
             backend.run(detector, dictation.on_action, tick)

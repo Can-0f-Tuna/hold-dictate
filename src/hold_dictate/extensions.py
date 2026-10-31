@@ -31,7 +31,8 @@ Settings and commands:
   settings_routes(server) -> dict             "POST /path" -> f() answered as JSON behind the token, or
                                               "GET /path" -> f(handler, query), before any token check
   check_settings(new, changes)                may fix `new` before a save; ValueError refuses the save
-  doctor_lines() -> list                      (good, text, fix) rows for `hold-dictate doctor`
+  doctor_lines() -> list                      (good, text, fix) rows for `hold-dictate doctor`. Not on the settings
+                                              page or with --offline, which stay on this computer
   extend_cli(commands)                        gets the argparse subparsers to add to
 Updates:
   update_source() -> source                   where updates come from instead of GitHub. source.latest() gives the

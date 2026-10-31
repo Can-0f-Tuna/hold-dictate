@@ -203,6 +203,22 @@ details .items { margin-top:var(--s-6); }
 .prog { display:block; height:4px; max-width:320px; border-radius:var(--r-pill); background:var(--line); overflow:hidden; }
 .prog i { display:block; height:100%; width:0; border-radius:inherit; background:var(--accent); transition:width .25s ease-out; }
 .gap-top { margin-top:var(--s-3); }
+.hist-tools { display:flex; flex-wrap:wrap; align-items:center; gap:var(--s-2) var(--s-3); }
+.hist-tools input { flex:1; min-width:180px; }
+.hist-list { display:grid; gap:var(--s-2); max-height:420px; overflow:auto; }
+.hist-list:empty { display:none; }
+.hist-row { display:grid; gap:var(--s-1); padding:var(--s-3) var(--s-4); border:1px solid var(--line-2); border-radius:var(--r-md); background:var(--surface); }
+.hist-text { white-space:pre-wrap; overflow-wrap:anywhere; unicode-bidi:plaintext; }
+.hist-meta { display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between; gap:var(--s-1) var(--s-3); font-size:var(--t-sm); color:var(--muted); }
+.hist-heard { font-size:var(--t-sm); color:var(--muted); white-space:pre-wrap; overflow-wrap:anywhere; unicode-bidi:plaintext; }
+.health { display:grid; gap:var(--s-3); }
+.health li { display:grid; grid-template-columns:18px 1fr; gap:0 var(--s-2); }
+.health { margin:0; padding:0; list-style:none; }
+.health svg { width:15px; height:15px; margin-top:4px; color:var(--ok); }
+.health .bad svg { color:var(--err); }
+.health .bad b { font-weight:500; }
+.health b { font-weight:400; overflow-wrap:anywhere; }
+.health .hint { grid-column:2; white-space:pre-wrap; overflow-wrap:anywhere; }
 .foot { padding:var(--s-6) 0 var(--s-8); font-size:var(--t-sm); color:var(--muted); display:flex; flex-wrap:wrap; gap:var(--s-2) var(--s-5); justify-content:space-between; }
 
 @media (max-width:720px) {
@@ -376,6 +392,28 @@ details .items { margin-top:var(--s-6); }
     </div>
     <div class="item"><label class="label" for="overlay_size">Size</label><input type="range" id="overlay_size" min="0.75" max="1.5" step="0.05"></div>
     <div><button class="link" id="resetLook">Reset the look</button></div>
+  </div>
+</section>
+
+<section class="group" aria-labelledby="h-hist">
+  <header><h2 id="h-hist">History</h2><p>Dictations that were pasted, kept in a file on this computer. They are never sent anywhere, and audio is never kept.</p></header>
+  <div class="items">
+    <div class="row"><label class="text" for="history_days"><b>Keep dictations for</b><span class="hint">Off stops saving new ones. It doesn't delete what is already here; Clear all does that.</span></label><select id="history_days" class="more"><option value="0">Off</option><option value="1">1 day</option><option value="7">7 days</option><option value="30">30 days</option><option value="90">90 days</option><option value="365">1 year</option></select></div>
+    <div class="item">
+      <div class="hist-tools"><input type="text" id="histSearch" dir="auto" placeholder="Search" aria-label="Search the history" spellcheck="false"><button class="btn small" id="histClear">Clear all</button></div>
+      <p class="note" id="histMsg" role="status"></p>
+      <div class="hist-list" id="histList"></div>
+      <p class="hint" id="histEmpty"></p>
+      <p class="hint">Apps with a Copy only or Do nothing rule are left out, and so is anything a text hook stops.</p>
+    </div>
+  </div>
+</section>
+
+<section class="group" aria-labelledby="h-health">
+  <header><h2 id="h-health">Health</h2><p>Whether everything hold-dictate needs is in place. This looks only at this computer.</p></header>
+  <div class="items">
+    <ul class="health" id="healthList" aria-live="polite"></ul>
+    <div class="acts-start"><button class="btn small" id="healthAgain">Check again</button><span class="note" id="healthMsg"></span></div>
   </div>
 </section>
 
@@ -561,6 +599,7 @@ function render(s) {
   if (document.activeElement !== $('filler_words')) $('filler_words').value = c.filler_words || s.fillers_default.join(', '); // the built-in list, to edit
   fitFillers(); // don't move the cursor while typing
   for (const id of ['min_hold', 'timeout', 'silence_stop']) $(id).value = c[id];
+  renderHistoryDays(s);
   renderMode(s); renderText(s); renderPasting(s); // these save on change, so show what was kept (out-of-range values are clamped)
   $('cfgPath').textContent = s.config_path;
   drawPill();
@@ -824,6 +863,69 @@ $('copyLast').onclick = async () => {
   setTimeout(() => { msg.textContent = ''; }, 2500);
 };
 
+// ---- history: everything in it is dictated text, so it only ever goes in with textContent ----
+function renderHistoryDays(s) {
+  const sel = $('history_days'), days = String(s.config.history_days);
+  if (![...sel.options].some(o => o.value === days)) sel.add(new Option(`${days} days`, days)); // set by hand in the file
+  sel.value = days;
+}
+function histRow(e) {
+  const row = document.createElement('div'), text = document.createElement('div'), meta = document.createElement('div'), when = document.createElement('span'), acts = document.createElement('span');
+  row.className = 'hist-row'; text.className = 'hist-text'; meta.className = 'hist-meta'; acts.className = 'acts-start';
+  text.textContent = e.text;
+  when.textContent = new Date(e.time * 1000).toLocaleString() + (e.app ? ' · ' + e.app : '');
+  const copy = Object.assign(document.createElement('button'), { className: 'link', textContent: 'Copy' });
+  const del = Object.assign(document.createElement('button'), { className: 'link', textContent: 'Delete' });
+  copy.onclick = () => histAct(async () => { const r = await api('/api/history/copy', { id: e.id }); if (r.message) throw new Error(r.message); return 'Copied'; });
+  del.onclick = () => histAct(async () => { await api('/api/history/delete', { id: e.id }); await loadHistory(); return 'Deleted'; });
+  acts.append(copy, del); meta.append(when, acts); row.append(text);
+  if (e.raw.trim() && e.raw.trim() !== e.text) row.append(Object.assign(document.createElement('div'), { className: 'hist-heard', textContent: 'Heard: ' + e.raw.trim() }));
+  row.append(meta);
+  return row;
+}
+async function histAct(act) {
+  const msg = $('histMsg');
+  try { msg.textContent = await act(); msg.className = 'note ok'; }
+  catch (e) { msg.textContent = e.message; msg.className = 'note bad'; }
+  setTimeout(() => { msg.textContent = ''; }, 2500);
+}
+let histAsked = 0;
+async function loadHistory() {
+  const asked = ++histAsked, q = $('histSearch').value;
+  let r;
+  try { r = await api('/api/history', { q }); } catch { return; }
+  if (asked !== histAsked) return; // a newer search is on its way
+  $('histList').replaceChildren(...r.entries.map(histRow));
+  $('histClear').disabled = !r.total && !q;
+  $('histEmpty').textContent = r.total > r.entries.length ? `Showing the latest ${r.entries.length} of ${r.total}. Search to find older ones.`
+    : r.total ? '' : q ? 'Nothing matches.' : S && S.config.history_days ? 'Nothing here yet. Dictations appear here once they are pasted.' : 'Nothing here. History is off, so dictations are not saved.';
+}
+$('history_days').onchange = async e => { if (await save({ history_days: Number(e.target.value) })) loadHistory(); };
+let histTimer;
+$('histSearch').addEventListener('input', () => { clearTimeout(histTimer); histTimer = setTimeout(loadHistory, 200); });
+$('histClear').onclick = () => { if (confirm('Delete every saved dictation? This can\'t be undone.')) histAct(async () => { await api('/api/history/clear', {}); await loadHistory(); return 'History cleared'; }); };
+
+// ---- health ----
+async function checkHealth() {
+  const msg = $('healthMsg'), again = $('healthAgain');
+  again.disabled = true; msg.className = 'note wait'; msg.textContent = 'Checking…';
+  try {
+    const r = await api('/api/health');
+    $('healthList').replaceChildren(...r.checks.map(c => {
+      const li = document.createElement('li'), name = document.createElement('b');
+      li.className = c.ok ? 'good' : 'bad';
+      li.innerHTML = c.ok ? ICON_OK : ICON_X;
+      name.textContent = c.text; li.append(name);
+      if (c.fix) li.append(Object.assign(document.createElement('span'), { className: 'hint', textContent: c.fix }));
+      return li;
+    }));
+    msg.className = r.ok ? 'note ok' : 'note bad';
+    msg.textContent = r.ok ? 'All good.' : 'Something needs fixing.';
+  } catch (e) { msg.className = 'note bad'; msg.textContent = e.message; }
+  again.disabled = false;
+}
+$('healthAgain').onclick = checkHealth;
+
 // ---- updates ----
 function renderUpdates(s) {
   const u = s.update, msg = $('updMsg');
@@ -1033,8 +1135,9 @@ saveState('idle');
 $('lastProblemClear').onclick = () => api('/api/problem/clear', {}).then(() => showProblem(null)).catch(() => {});
 const refresh = () => api('/api/state').then(s => { S = s; render(s); if ($('save').classList.contains('failed')) saveState('idle'); }).catch(() => {}); // the hero and the stale banner already say what went wrong
 if (S) render(S); else refresh();
+loadHistory(); checkHealth();
 hook(pageHooks.starts);
-window.addEventListener('focus', () => { if (!recording && !document.activeElement.matches('input[type=text], input[type=password], input[type=number]')) refresh(); });
+window.addEventListener('focus', () => { if (!recording && !document.activeElement.matches('input[type=text], input[type=password], input[type=number]')) { refresh(); loadHistory(); } });
 </script>
 </body>
 </html>

@@ -97,12 +97,16 @@ class LiveTyper:
         self.phrase += len(new)
         return True
 
-    def finish(self, recording, transcribe) -> str:
-        """Waits for the request in flight, types the rest of the recording and returns all the text."""
+    def finish(self, recording, transcribe, released=None) -> str:
+        """Waits for the request in flight, types the rest of the recording and returns all the text.
+        `released`: the sample where the key came up, if the recording went on after it."""
         self.stop()
         if self.thread.ident is not None:
             self.thread.join()
-        speech = None if self.note else audio.speech_only(recording[self.start_at:])
+        rest = recording[self.start_at:]
+        if released is not None:  # what is left needs speech of its own: earlier phrases are typed already
+            rest = audio.without_empty_tail(rest, max(0, released - self.start_at))
+        speech = None if self.note else audio.speech_only(rest)
         if speech is not None:
             self._type(self.clean(transcribe(speech)).split())
         return self.typed

@@ -37,9 +37,19 @@ A local page at `http://127.0.0.1:47811` that only this computer can open. Open 
 - automatic updates
 - text clean-up: drop phrases Whisper invents from noise ("Thanks for watching", on by default), remove filler words (um, uh, אה, אממ), turn spoken punctuation into symbols ("comma" / "פסיק", "new line" / "שורה חדשה"), and your own word replacements (a Hebrew word also matches with a joined prefix: "ורסל" → "Vercel" turns "בורסל" into "ב-Vercel")
 - pasting: press Enter after pasting, and rules per app (paste without Enter, paste and press Enter, Ctrl+Shift+V, copy only, or do nothing). The page shows the last dictation and which app it went to
+- history: how long dictations are kept (see [History](#history)), with search, copy, delete and clear
+- health: the same checks as `hold-dictate doctor`, with one fix for each failed item and a **Check again** button. On macOS it names the permission that is missing. It looks only at this computer, so the key is checked as saved; **Check and save** under Transcription tries it with the service
 - a text hook (Advanced): a shell command that gets the text on stdin; what it prints is pasted instead, empty output keeps the text, exit code 77 pastes nothing. It has 5 seconds and sees `HOLD_DICTATE_APP` and `HOLD_DICTATE_PROVIDER`
 
 Changes apply immediately; no restart needed. Prefer the terminal? `hold-dictate setup` still works.
+
+## History
+
+Dictations that were pasted are kept in `history.json`, beside `config.toml`: the final text, what was heard, the time and the app. Audio is never kept, and the file never leaves your computer. It is readable only by you on Linux and macOS.
+
+Keep them for 1, 7 (the default), 30, 90 or 365 days, or Off. A new install starts at 7 days. If you used hold-dictate before history existed it stays Off until you turn it on. The newest 2000 entries and 4 MB are kept at most, and the oldest go first.
+
+Off stops saving new dictations and deletes nothing. **Clear all**, or `hold-dictate history clear`, deletes them. Apps with a copy-only or do-nothing rule are never saved, nor is text a hook stops, a paste that failed, or a recording made with an extension's second shortcut. `paste-last` and `copy-last` don't use the file: they work from memory, with history on or off.
 
 ## Updates
 
@@ -70,7 +80,8 @@ If the cloud request fails and the `local` extra is installed, it falls back to 
 | --- | --- |
 | `hold-dictate settings` | Opens the settings page |
 | `hold-dictate setup` | Guided setup in the terminal (safe to run again) |
-| `hold-dictate doctor` | Checks microphone, keyboard access, paste helpers and API key |
+| `hold-dictate doctor` | Checks microphone, keyboard access, paste helpers and API key. `--offline` stays on this computer, `--json` is for scripts |
+| `hold-dictate history` | Lists saved dictations. Also `history search WORDS`, `history delete ID`, `history clear` |
 | `hold-dictate transcribe FILE.wav` | Transcribes a file |
 | `hold-dictate service install\|uninstall\|status` | Start at login |
 | `hold-dictate update` | Installs the latest release now |
@@ -78,11 +89,13 @@ If the cloud request fails and the `local` extra is installed, it falls back to 
 | `hold-dictate copy-last` | Copies the last dictation to the clipboard (also in the tray menu) |
 | `hold-dictate config` | Prints the config file path |
 
-Settings live in a TOML file: `~/.config/hold-dictate/config.toml` (Linux), `~/Library/Application Support/hold-dictate/config.toml` (macOS), `%APPDATA%\hold-dictate\config.toml` (Windows). Options: `provider`, `api_key`, `base_url`, `model`, `languages` (comma-separated codes such as `"he,en"`; empty means any language), `prompt`, `hotkey`, `hotkey_mode` (`hold`, `auto` or `toggle`), `silence_stop` (seconds, 0 = off), `live_text`, `local_model`, `local_fallback`, `beeps`, `background_audio` (`lower`, `mute` or `off`), `min_hold`, `timeout`, `auto_update`, `overlay_bg`, `overlay_bars`, `overlay_position`, `overlay_size`, `drop_hallucinations`, `remove_fillers`, `filler_words` (comma-separated, empty = built-in), `spoken_punctuation`, `word_overrides` (a table: `{ "get hub" = "GitHub" }`), `auto_submit`, `app_rules` (a table: `{ "slack" = "submit", "keepassxc" = "off" }`; values `paste`, `submit`, `shift`, `clipboard`, `off`; a name matches part of the app name), and `post_hook`.
+Settings live in a TOML file: `~/.config/hold-dictate/config.toml` (Linux), `~/Library/Application Support/hold-dictate/config.toml` (macOS), `%APPDATA%\hold-dictate\config.toml` (Windows). Options: `provider`, `api_key`, `base_url`, `model`, `languages` (comma-separated codes such as `"he,en"`; empty means any language), `prompt`, `hotkey`, `hotkey_mode` (`hold`, `auto` or `toggle`), `silence_stop` (seconds, 0 = off), `live_text`, `local_model`, `local_fallback`, `beeps`, `background_audio` (`lower`, `mute` or `off`), `min_hold`, `timeout`, `auto_update`, `overlay_bg`, `overlay_bars`, `overlay_position`, `overlay_size`, `drop_hallucinations`, `remove_fillers`, `filler_words` (comma-separated, empty = built-in), `spoken_punctuation`, `word_overrides` (a table: `{ "get hub" = "GitHub" }`), `history_days` (0 = off), `auto_submit`, `app_rules` (a table: `{ "slack" = "submit", "keepassxc" = "off" }`; values `paste`, `submit`, `shift`, `clipboard`, `off`; a name matches part of the app name), and `post_hook`.
 
 The app is told apart by its window class on X11, Hyprland, Sway and niri, by its name on macOS and its program name on Windows. GNOME and KDE on Wayland do not say which window is focused, so per-app rules do not apply there.
 
 Hotkey format: modifiers (`alt`, `ctrl`, `shift`, `super`) plus one key (`space`, a-z, 0-9, f1-f12), for example `ctrl+alt+d`.
+
+After you let go, the microphone stays on for 200 ms, because the last word often isn't over yet. The stop sound and your music come back at the release itself. A clip with no speech before the release stays silent, whatever comes after it.
 
 ## Per-OS notes
 
