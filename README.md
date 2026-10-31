@@ -32,7 +32,7 @@ A local page at `http://127.0.0.1:47811` that only this computer can open. Open 
 - speech service and API key (with a check that the key works)
 - the model: Automatic uses the one we recommend for that service; **Choose another** lets you pick one
 - the languages you speak (pick as many as you like, for example Hebrew and English), the hotkey (press the keys to record it), and how it works: **hold** to talk (the default), **tap or hold** (a quick tap starts, the next tap stops; holding longer works like hold) or **tap to start and stop**. In the tap modes it can stop by itself after a few seconds of quiet
-- when the text is typed: all at once when you finish (the default), or as you speak, into the text box you are in, in steps of a few seconds. Typed words can't be corrected, so it can be a little less accurate. It sends a short request every few seconds, which counts toward your speech service's limits. On Windows and macOS, while the shortcut is held, the text waits until you let go. It is not used with writing that fits the app, a text hook, or the copy-only and do-nothing app rules
+- when the text is typed: all at once when you finish (the default), or as you speak, into the text box you are in, in steps of a few seconds. Typed words can't be corrected, so it can be a little less accurate. It sends a short request every few seconds, which counts toward your speech service's limits. On Windows and macOS, while the shortcut is held, the text waits until you let go. Choosing it turns writing that fits the app off, and turning that on brings this back to the default. It is not used with a text hook, or the copy-only and do-nothing app rules
 - what happens to music and videos while you dictate: turned down (the default), silenced, or left alone
 - sounds, and the recording pill: style (Dots, the default, or the original Lines), colour, position and size
 - automatic updates
@@ -51,7 +51,7 @@ Changes apply immediately; no restart needed. Prefer the terminal? `hold-dictate
 hold-dictate checks GitHub every 10 minutes and, while you are not dictating, installs a newer release and restarts itself. Turn this off in the settings. When an update is waiting (automatic updates off, or the install failed), the recording pill on Linux shows a small **!** tab; click it to install, or run `hold-dictate update`. Releases are made by pushing a tag that matches `__version__` in `src/hold_dictate/__init__.py`:
 
 ```sh
-git tag v0.8.1 && git push origin v0.8.1
+git tag v0.8.2 && git push origin v0.8.2
 ```
 
 The Release workflow runs the tests and publishes the GitHub release. Installed copies pick it up within 10 minutes.

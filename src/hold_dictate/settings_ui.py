@@ -222,6 +222,11 @@ class SettingsServer:
         return new
 
     def save(self, changes: dict) -> dict:
+        # typed live, the text can't be rewritten at the end, so the last of the two chosen turns the other off
+        if changes.get("live_text") is True:
+            changes = {**changes, "premium_style": False}
+        elif changes.get("premium_style") is True:
+            changes = {**changes, "live_text": False}
         with self.lock:
             new = self.candidate(changes)
             cfgmod.save(new)

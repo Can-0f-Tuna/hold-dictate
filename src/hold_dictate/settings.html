@@ -426,7 +426,7 @@ details .items { margin-top:var(--s-6); }
         <div class="acts-start"><button class="btn small" id="recEdit">Change</button><button class="link" id="editOff">Turn off</button><span class="note" id="editMsg"></span></div>
       </div>
     </div>
-    <label class="row"><span class="text"><b>Writing that fits the app</b><span class="hint">Short and casual in chat, full sentences in email, code words kept as they are in your editor.</span></span><span class="tag prem"></span><input type="checkbox" class="switch prem-on" id="premium_style"></label>
+    <label class="row"><span class="text"><b>Writing that fits the app</b><span class="hint">Short and casual in chat, full sentences in email, code words kept as they are in your editor. Turning this on brings the text back to when you finish, and choosing As you speak turns it off.</span></span><span class="tag prem"></span><input type="checkbox" class="switch prem-on" id="premium_style"></label>
     <div class="item">
       <label class="row"><span class="text"><b>A dictionary that learns</b><span class="hint">When you fix a word it typed, hold-dictate learns how you spell it. Nothing to type in by hand.</span></span><span class="tag prem"></span><input type="checkbox" class="switch prem-on" id="premium_learn"></label>
       <div class="item prem-on" id="learnBox">
@@ -672,7 +672,7 @@ function render(s) {
     : c.post_hook.trim() ? 'A text hook is on, so the text still comes when you finish. Remove it to use this.'
     : s.platform !== 'linux' && c.hotkey_mode === 'hold' ? 'While you hold the keys nothing can be typed on this system, so the text comes when you let go. Use Tap or hold, or Tap on/off, to see it as you speak.' : '';
   $('liveHint').textContent = c.live_text
-    ? liveOff || "The words appear in the text box you are in while you talk, a few at a time. Words can't be corrected once typed, so it can be a little less accurate. Each step is a request to your speech service, which counts toward its limits."
+    ? liveOff || "The words appear in the text box you are in while you talk, a few at a time. Words can't be corrected once typed, so it can be a little less accurate. Each step is a request to your speech service, which counts toward its limits." + (s.account && s.account.premium ? ' Writing that fits the app stays off with this.' : '')
     : 'All the text is pasted at once when you finish. The most accurate way.';
   $('lookGroup').hidden = !s.overlay;
   $('overlay_bg').value = c.overlay_bg; $('overlay_bars').value = c.overlay_bars;

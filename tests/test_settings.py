@@ -291,6 +291,21 @@ def test_edit_shortcut_is_checked_and_must_differ(server):
     assert server.cfg.edit_hotkey == ""
 
 
+def test_typing_as_you_speak_and_writing_that_fits_the_app_turn_each_other_off(server, tmp_path):
+    code, state = call(server, "/api/config", {"premium_style": True})
+    assert state["config"]["premium_style"] and not state["config"]["live_text"]
+    code, state = call(server, "/api/config", {"live_text": True})
+    assert state["config"]["live_text"] and not state["config"]["premium_style"]
+    code, state = call(server, "/api/config", {"premium_style": True})
+    assert state["config"]["premium_style"] and not state["config"]["live_text"]
+    saved = config.load(tmp_path / "config.toml")
+    assert saved.premium_style and not saved.live_text
+    code, state = call(server, "/api/config", {"live_text": False})  # going back to the default turns nothing on
+    assert state["config"]["premium_style"]
+    code, state = call(server, "/api/config", {"premium_style": False})
+    assert not state["config"]["premium_style"] and not state["config"]["live_text"]
+
+
 def test_premium_switches_and_the_learned_lists(server, tmp_path):
     server.cfg.learned_terms, server.cfg.learned_fixes = "Kubernetes, Vercel", {"get hub": "GitHub", "versal": "Vercel"}
     code, state = call(server, "/api/state")
