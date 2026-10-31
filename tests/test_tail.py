@@ -47,12 +47,15 @@ class Stream:
         threading.Thread(target=self.feed, daemon=True).start()
 
     def feed(self):
-        began = time.monotonic()
+        # Blocks follow the clock, as a sound card's do, however late this thread wakes up.
+        began, sent = time.monotonic(), 0
         while self.running:
-            block = self.device.sound(time.monotonic() - began)
-            if block is not None:
-                self.callback(block.reshape(-1, 1).copy(), len(block), None, None)
-            time.sleep(0.02)
+            while self.running and sent * audio.BLOCK / audio.SAMPLE_RATE <= time.monotonic() - began:
+                block = self.device.sound(sent * audio.BLOCK / audio.SAMPLE_RATE)
+                sent += 1
+                if block is not None:
+                    self.callback(block.reshape(-1, 1).copy(), len(block), None, None)
+            time.sleep(0.005)
 
     def stop(self):
         if self.device.hang:

@@ -1,4 +1,5 @@
 """An extension can add to the app and a broken one can't stop it. Real entry points are in the private package's tests."""
+import sys
 import json
 import urllib.error
 import urllib.request
@@ -295,6 +296,7 @@ def installed_with(monkeypatch):
     return u, ran
 
 
+@pytest.mark.skipif(sys.platform == "win32", reason="Windows installs at restart, through a helper")
 def test_an_update_source_decides_what_is_installed(add, monkeypatch):
     add(type("Ext", (), {"update_source": lambda self: Source()})())
     u, ran = installed_with(monkeypatch)
