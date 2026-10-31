@@ -110,6 +110,7 @@ def test_a_stuck_helper_never_holds_up_the_audio_thread(monkeypatch):
         pill.send("L 0.50 " + "x" * 50)
     assert time.monotonic() - started < 5
     pill.starts = indicator.MAX_STARTS
+    assert wait_for(lambda: pill.proc)  # its thread can start late, after all the sending
     pill.proc.kill()
 
 
