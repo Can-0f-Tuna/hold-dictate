@@ -440,3 +440,24 @@ def test_a_dead_microphone_is_explained(api):
     d.on_action("stop")
     settle(d)
     assert any(isinstance(e, tuple) and "microphone" in e[1] for e in fb.log)
+
+
+class SlowMic:
+    """A Bluetooth mic: it opens at once, and real sound comes later."""
+
+    def __init__(self, on_level=None):
+        self.live = threading.Event()
+
+    def stop(self):
+        return np.zeros(16000, dtype=np.float32)
+
+
+def test_the_start_cue_waits_for_the_mic(monkeypatch):
+    fb = FakeFeedback()
+    d = Dictation(Config(provider="custom", base_url="http://x", api_key="k", min_hold=9), fb, recorder_factory=SlowMic)
+    d.begin()
+    time.sleep(0.1)
+    assert "recording" not in fb.log
+    d.recorder.live.set()
+    time.sleep(0.2)
+    assert fb.log.count("recording") == 1

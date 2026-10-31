@@ -13,6 +13,9 @@ SAMPLES = {code: sentence for code, _, sentence in LANGUAGES if sentence}
 # Whisper reads only the last 224 tokens of a prompt (Groq, OpenAI and faster-whisper alike). Learned words
 # are added only while the prompt stays under this many UTF-8 bytes, about 3 per token, which leaves room.
 PROMPT_BYTES = 600
+# Below this avg_logprob a clip heard in your other language is checked in your first one. Measured on Groq's
+# large-v3: short English scored -0.41 or better, Hebrew misheard as English -0.45 or worse.
+UNSURE_LOGPROB = -0.43
 
 
 class TranscribeError(Problem):
@@ -103,17 +106,26 @@ def detected_code(name: str) -> str:
 
 def transcribe_api(cfg: Config, audio) -> str:
     """Several languages: Whisper models report what they heard, and a language outside your list is
-    transcribed again in your first language (Hebrew misheard as Arabic or Yiddish, for example)."""
+    transcribed again in your first language (Hebrew misheard as Arabic or Yiddish, for example). So is a
+    language on your list that Whisper is unsure of (Hebrew misheard as English), and the surer text wins."""
     force, prompt = language_hints(cfg)
     codes = cfg.language_codes()
     verify = len(codes) > 1 and cfg.provider in ("groq", "openai") and "whisper" in cfg.effective_model()
-    text, heard = _request(cfg, audio, force, prompt, "verbose_json" if verify else "json")
-    if verify and detected_code(heard) not in ("", *codes):
-        text, _ = _request(cfg, audio, codes[0], prompt, "json")
+    text, heard, sure = _request(cfg, audio, force, prompt, "verbose_json" if verify else "json")
+    if not verify:
+        return text
+    code = detected_code(heard)
+    if code not in ("", *codes):
+        return _request(cfg, audio, codes[0], prompt, "json")[0]
+    if code not in ("", codes[0]) and sure is not None and sure < UNSURE_LOGPROB:
+        again, _, sure_again = _request(cfg, audio, codes[0], prompt, "verbose_json")
+        if sure_again is not None and sure_again > sure:
+            return again
     return text
 
 
-def _request(cfg: Config, audio, language: str, prompt: str, response_format: str) -> tuple[str, str]:
+def _request(cfg: Config, audio, language: str, prompt: str, response_format: str) -> tuple[str, str, float | None]:
+    """(text, the language it reports, its average avg_logprob or None)."""
     key, base = cfg.effective_key(), cfg.effective_base_url()
     if not key:
         raise TranscribeError("no API key set. Add one in the settings (`hold-dictate settings`).")
@@ -133,7 +145,8 @@ def _request(cfg: Config, audio, language: str, prompt: str, response_format: st
     try:
         with urllib.request.urlopen(request, timeout=cfg.timeout) as response:
             data = json.load(response)
-            return data["text"].strip(), str(data.get("language") or "")
+            sure = [s["avg_logprob"] for s in data.get("segments") or [] if "avg_logprob" in s]
+            return data["text"].strip(), str(data.get("language") or ""), sum(sure) / len(sure) if sure else None
     except urllib.error.HTTPError as e:
         raise TranscribeError(_explain_http_error(cfg, e), _brief_http_error(cfg, e.code)) from e
     except (urllib.error.URLError, TimeoutError, OSError) as e:

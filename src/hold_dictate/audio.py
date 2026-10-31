@@ -1,5 +1,6 @@
 """Microphone capture and the small signal helpers around it."""
 import io
+import threading
 import wave
 
 import numpy as np
@@ -30,6 +31,7 @@ class Recorder:
         except OSError as e:  # PortAudio missing (Linux: install libportaudio2)
             raise MicError(f"audio library not found: {e}", "The audio library is missing. Install libportaudio2.", "mic") from e
         self.on_level = on_level
+        self.live = threading.Event()  # set at the first real sound; a Bluetooth mic gives none for over half a second
         self.chunks: list[np.ndarray] = []
         try:
             self.stream = sd.InputStream(
@@ -42,6 +44,8 @@ class Recorder:
     def _callback(self, indata, frames, time_info, status):
         samples = indata[:, 0].copy()
         self.chunks.append(samples)
+        if not self.live.is_set() and samples.any():
+            self.live.set()
         if self.on_level:
             self.on_level(level_of(samples))
 

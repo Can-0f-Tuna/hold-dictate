@@ -28,6 +28,7 @@ def transcribe(cfg: Config, local: LocalTranscriber, speech) -> tuple[str, str]:
 
 TAP_SECONDS = 0.4  # auto mode: a press shorter than this keeps recording until the next press
 NO_SPEECH_SECONDS = 8.0  # with silence_stop on, a recording where nothing is said stops after this
+MIC_WAIT = 1.5  # the start cue comes when the mic is live, or after this long if it never says so
 
 
 class Dictation:
@@ -55,6 +56,7 @@ class Dictation:
         self.live = None  # types while you speak, when turned on
         self.live_app = ""
         self.latched = False  # auto and toggle: the key is up but the recording goes on
+        self.cued = False  # the pill and the start sound have gone out for this recording
         self.voice = audio.VoiceMeter()
         self.pressed_at = 0.0
         self.last_used = time.monotonic()
@@ -118,10 +120,10 @@ class Dictation:
         except audio.MicError as e:
             self.fb.error(str(e), e.brief, e.icon)
             return
-        self.latched, self.which = False, which
-        self.fb.recording()
+        self.latched, self.which, self.cued = False, which, False
         self.ducker.duck()
         self.pressed_at = self.last_used = time.monotonic()
+        threading.Thread(target=self._cue_when_live, args=(self.recorder,), daemon=True).start()
         if self._types_live(which):
             self.live = LiveTyper(self.recorder, self._transcribe_live, lambda raw: textproc.clean(raw, self.cfg), self._type_live,
                                   ready=lambda: sys.platform.startswith("linux") or self.latched,
@@ -129,6 +131,21 @@ class Dictation:
             self.live.start()
         if self.cfg.hotkey_mode != "hold" and self.cfg.silence_stop > 0:
             threading.Thread(target=self._watch_silence, args=(self.recorder,), daemon=True).start()
+
+    def _cue_when_live(self, recorder):
+        """The pill and the start sound mean "speak now", so they wait for the mic: words said into a Bluetooth
+        headset before its link is up never arrive, and Whisper turns what is left into another language."""
+        live = getattr(recorder, "live", None)
+        if live is not None:
+            live.wait(MIC_WAIT)
+        with self.lock:
+            if self.recorder is recorder:
+                self._cue()
+
+    def _cue(self):
+        if not self.cued:
+            self.cued = True
+            self.fb.recording()
 
     def _watch_silence(self, recorder):
         """While a tapped recording runs, stops it once you have been quiet for silence_stop seconds."""
@@ -157,6 +174,7 @@ class Dictation:
                     live.stop()
                 self.fb.done()
                 return
+            self._cue()  # let go before the mic was live: the pill still opens, to show the work
             self.fb.working()
             work = self.process_edit if self.which == "edit" else (lambda r: self.process_live(r, live)) if live else self.process
             worker = threading.Thread(target=work, args=(recording,), daemon=True)

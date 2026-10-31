@@ -93,9 +93,31 @@ def test_language_hints():
 
 def test_language_outside_the_list_is_transcribed_again(api, monkeypatch):
     from hold_dictate import providers
-    answers = iter([("مرحبا", "arabic"), ("שלום", "")])
+    answers = iter([("مرحبا", "arabic", -0.3), ("שלום", "", None)])
     sent = []
     monkeypatch.setattr(providers, "_request", lambda cfg, audio, lang, prompt, fmt: sent.append((lang, fmt)) or next(answers))
     cfg = config.Config(provider="groq", api_key="k", languages="he,en")
     assert transcribe_api(cfg, tone(0.5)) == "שלום"
     assert sent == [("", "verbose_json"), ("he", "json")]
+
+
+def retried(monkeypatch, *answers):
+    from hold_dictate import providers
+    answers, sent = iter(answers), []
+    monkeypatch.setattr(providers, "_request", lambda cfg, audio, lang, prompt, fmt: sent.append(lang) or next(answers))
+    return transcribe_api(config.Config(provider="groq", api_key="k", languages="he,en"), tone(0.5)), sent
+
+
+def test_unsure_english_is_checked_in_the_first_language(monkeypatch):
+    text, sent = retried(monkeypatch, ("Time shall also be coming.", "english", -0.8), ("בדיקה", "hebrew", -0.2))
+    assert text == "בדיקה" and sent == ["", "he"]
+
+
+def test_the_surer_text_wins_the_second_look(monkeypatch):
+    text, _ = retried(monkeypatch, ("Ship it!", "english", -0.5), ("שיפיט", "hebrew", -0.9))
+    assert text == "Ship it!"
+
+
+def test_confident_second_language_is_left_alone(monkeypatch):
+    text, sent = retried(monkeypatch, ("Run the build again.", "english", -0.1))
+    assert text == "Run the build again." and sent == [""]
