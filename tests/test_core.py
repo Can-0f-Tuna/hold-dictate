@@ -37,6 +37,29 @@ def test_vad_drops_silence_and_keeps_speech():
     assert speech is not None and 0.9 * audio.SAMPLE_RATE < len(speech) < 2.0 * audio.SAMPLE_RATE
 
 
+def test_vad_keeps_speech_with_no_pause():
+    rng = np.random.default_rng(0)
+    # Words at a steady level over a loud room: the quietest frames are not far below the speech.
+    t = np.arange(audio.SAMPLE_RATE * 8) / audio.SAMPLE_RATE
+    clip = (rng.standard_normal(len(t)) * 0.03 * (1 + 0.35 * np.sin(2 * np.pi * 3 * t))).astype(np.float32)
+    speech = audio.speech_only(clip)
+    assert speech is not None and len(speech) > 0.9 * len(clip)
+
+
+def test_vad_keeps_all_of_a_clip_with_few_pauses():
+    rng = np.random.default_rng(0)
+    gap = (rng.standard_normal(audio.SAMPLE_RATE // 3) * 0.01).astype(np.float32)
+    clip = np.concatenate([tone(2.0, amp=0.1), gap, tone(2.0, amp=0.1), tone(2.0, amp=0.04), gap, tone(1.0, amp=0.1)])
+    speech = audio.speech_only(clip)
+    assert speech is not None and len(speech) > 0.9 * len(clip)
+
+
+def test_vad_hears_a_quiet_microphone():
+    quiet = (np.random.default_rng(0).standard_normal(audio.SAMPLE_RATE) * 0.0002).astype(np.float32)
+    clip = np.concatenate([quiet, tone(1.0, amp=0.004), quiet])
+    assert audio.speech_only(clip) is not None
+
+
 def test_wav_roundtrip(tmp_path):
     p = tmp_path / "a.wav"
     p.write_bytes(audio.wav_bytes(tone(0.5)))

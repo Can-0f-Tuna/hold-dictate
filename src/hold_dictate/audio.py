@@ -111,10 +111,18 @@ class VoiceMeter:
 
 
 def _voiced(audio: np.ndarray, frame: int) -> np.ndarray:
-    """One bool per frame: clearly above the quietest part of the clip."""
+    """One bool per frame: clearly above the quietest part of the clip.
+
+    Speech rises and falls and room noise holds steady, so a quiet clip that barely moves has no speech in it.
+    A loud steady clip is speech with no pause to measure from: words lost for good cost more than one wasted
+    request. So does a clip with few pauses, so the bar stays within 12 dB of its loud frames, or only those
+    would count and the rest of the words would be cut."""
     n = len(audio) // frame
     rms = np.sqrt(np.mean(audio[: n * frame].reshape(n, frame) ** 2, axis=1)) + 1e-9
-    return rms > max(np.percentile(rms, 10) * 3, 10 ** (-48 / 20))
+    quiet, loud = np.percentile(rms, 10), np.percentile(rms, 95)
+    if loud < quiet * 2:
+        return np.full(n, loud > 10 ** (-35 / 20))
+    return rms > max(min(quiet * 3, loud / 4), 10 ** (-60 / 20))
 
 
 def is_dead(audio: np.ndarray) -> bool:
