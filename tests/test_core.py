@@ -106,7 +106,7 @@ def test_language_hints():
     from hold_dictate.config import HEBREW_PROMPT
     from hold_dictate.providers import language_hints
     assert language_hints(config.Config(languages="fr")) == ("fr", "")
-    assert language_hints(config.Config(languages="he")) == ("", HEBREW_PROMPT)  # forced Hebrew mangles English
+    assert language_hints(config.Config(languages="he")) == ("he", HEBREW_PROMPT)  # unforced, short Hebrew came out as Cyrillic
     assert language_hints(config.Config(languages="he", provider="local")) == ("he", HEBREW_PROMPT)
     assert language_hints(config.Config(languages="he,en")) == ("", HEBREW_PROMPT)
     force, prompt = language_hints(config.Config(languages="he,en,ru", prompt="Kubernetes"))

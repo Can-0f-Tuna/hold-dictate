@@ -56,11 +56,12 @@ def _explain_http_error(cfg: Config, e: urllib.error.HTTPError) -> str:
 def language_hints(cfg: Config) -> tuple[str, str]:
     """(language to force or '', prompt) for the languages you picked.
 
-    One language is forced, except Hebrew in the cloud: forcing it makes Whisper write English words in
-    Hebrew letters. Several languages stay on auto-detect, and the prompt holds a sentence in each of them,
-    which steers the model toward them instead of a similar-sounding language."""
+    One language is forced. Hebrew left to auto-detect in the cloud came out in other scripts on short clips
+    ("בדיקה" as "Бдика" or "Bidika"), and forcing it cost the English words in mixed sentences nothing.
+    Several languages stay on auto-detect, and the prompt holds a sentence in each of them, which steers
+    the model toward them instead of a similar-sounding language."""
     codes = cfg.language_codes()
-    force = codes[0] if len(codes) == 1 and not (codes[0] == "he" and cfg.provider != "local") else ""
+    force = codes[0] if len(codes) == 1 else ""
     parts, covered = [], set()
     if "he" in codes and (codes == ["he"] or "en" in codes):
         parts, covered = [HEBREW_PROMPT], {"he", "en"}  # Hebrew with English words in Latin letters
