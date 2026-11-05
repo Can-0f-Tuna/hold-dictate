@@ -5,9 +5,11 @@ HoldDetector is pure logic (fed key up/down events by name). Backends supply the
   - PynputBackend uses the OS keyboard hooks on Windows and macOS (and Linux X11).
 """
 import os
+import queue
 import select
 import struct
 import sys
+import threading
 import time
 
 MODIFIERS = ("alt", "ctrl", "shift", "super")
@@ -212,8 +214,13 @@ def _pynput_name(key) -> str | None:
 
 class PynputBackend:
     name = "pynput"
+    on_problem = None  # macOS: called with what to turn on while the keyboard can't be read, and '' once it can
 
-    def usable(self) -> bool:
+    def usable(self, quick: bool = False) -> bool:
+        """quick: only look for pynput. Importing it loads Quartz on macOS, a second warm and far more cold."""
+        if quick:
+            import importlib.util
+            return importlib.util.find_spec("pynput") is not None
         try:
             import pynput.keyboard  # noqa: F401
             return True
@@ -224,6 +231,20 @@ class PynputBackend:
         from pynput import keyboard
 
         win_state: set = set()
+        actions: queue.Queue = queue.Queue()
+
+        def deliver():
+            # The OS calls the hooks below with the keyboard waiting on them: Windows drops a slow low-level hook,
+            # and macOS turns off a tap that takes too long (a first recording waits for the Microphone prompt).
+            # So they only note the key; what it starts runs here.
+            while True:
+                action = actions.get()
+                try:
+                    on_action(action)
+                except Exception as e:
+                    print(f"hold-dictate: {action} failed: {e!r}", file=sys.stderr, flush=True)
+
+        threading.Thread(target=deliver, daemon=True, name="hotkey actions").start()
 
         def handle(key, pressed):
             name = _pynput_name(key)
@@ -231,7 +252,7 @@ class PynputBackend:
                 return
             action = detector.feed(name, name, pressed)
             if action:
-                on_action(action)
+                actions.put(action)
 
         def win_filter(msg, data):
             # Alt+Space opens the window menu on Windows; hide the Space press while dictating.
@@ -248,6 +269,9 @@ class PynputBackend:
             # Option+Space types a non-breaking space on macOS; swallow Space while dictating.
             try:
                 import Quartz
+                if event_type in _MAC_TAP_OFF:
+                    _mac_enable_tap(listener, "it was turned off" if event_type == _MAC_TAP_OFF[1] else "it was too slow")
+                    return event
                 code = Quartz.CGEventGetIntegerValueField(event, Quartz.kCGKeyboardEventKeycode)
                 flags = Quartz.CGEventGetFlags(event)
                 if code == 49 and any(h.key == "space" and all(flags & _MAC_FLAGS[m] for m in h.mods) for h in detector.hotkeys()):
@@ -256,35 +280,102 @@ class PynputBackend:
                 pass
             return event
 
-        extra = {}
+        extra, listener_class = {}, keyboard.Listener
         if sys.platform == "win32":
             extra["win32_event_filter"] = win_filter
         elif sys.platform == "darwin":
             extra["darwin_intercept"] = mac_intercept
-        listener = keyboard.Listener(
-            on_press=lambda k: handle(k, True), on_release=lambda k: handle(k, False), **extra
-        )
-        listener.start()
-        while listener.is_alive():
-            time.sleep(min(tick_seconds, 1.0))
+            listener_class = _mac_listener_class(keyboard.Listener)
+        while True:
+            if sys.platform == "darwin":
+                self._mac_wait_for_access(on_tick)
+            listener = listener_class(
+                on_press=lambda k: handle(k, True), on_release=lambda k: handle(k, False), **extra
+            )
+            listener.start()
+            while listener.is_alive():
+                time.sleep(min(tick_seconds, 1.0))
+                if sys.platform == "darwin":
+                    _mac_check_tap(listener)
+                if on_tick:
+                    on_tick()
+            if sys.platform != "darwin" or _mac_trusted():
+                return  # gone for good: the caller exits with an error, and a login service starts it again
+            # macOS: Accessibility was switched off while running; wait for it to come back
+
+    def _mac_wait_for_access(self, on_tick):
+        """Without Accessibility pynput's tap can't start. Asks once, says what to turn on, and goes on as soon
+        as it is on: a running app used to ignore the switch until a restart."""
+        from . import macos
+        if _mac_trusted():
+            return
+        macos.ask_accessibility()
+        print(f"hold-dictate: {macos.accessibility_problem().replace(chr(10), ' ')}", file=sys.stderr, flush=True)
+        if self.on_problem:
+            self.on_problem(macos.accessibility_problem())
+        while not _mac_trusted():
+            time.sleep(1)
             if on_tick:
                 on_tick()
+        print("hold-dictate: Accessibility is on; the shortcut works now", flush=True)
+        if self.on_problem:
+            self.on_problem("")
 
 
-def choose_backend():
-    """Returns (backend or None, problem text)."""
+# kCGEventTapDisabledByTimeout, kCGEventTapDisabledByUserInput: macOS tells the tap it was switched off this way
+_MAC_TAP_OFF = (0xFFFFFFFE, 0xFFFFFFFF)
+
+
+def _mac_trusted() -> bool:
+    from . import macos
+    try:
+        return macos.accessibility_trusted()
+    except Exception:
+        return True  # can't tell: let pynput try
+
+
+def _mac_listener_class(base):
+    """pynput's listener, keeping its event tap where we can switch it back on: pynput never does."""
+    class Listener(base):
+        tap = None
+
+        def _create_event_tap(self):
+            self.tap = super()._create_event_tap()
+            return self.tap
+    return Listener
+
+
+def _mac_enable_tap(listener, why: str):
+    import Quartz
+    if listener.tap is not None:
+        Quartz.CGEventTapEnable(listener.tap, True)
+        print(f"hold-dictate: macOS turned the keyboard tap off ({why}); it is back on", file=sys.stderr, flush=True)
+
+
+def _mac_check_tap(listener):
+    """The tap's own notice can be missed; once a second, a tap that is off is switched back on."""
+    try:
+        import Quartz
+        if listener.tap is not None and not Quartz.CGEventTapIsEnabled(listener.tap):
+            _mac_enable_tap(listener, "found off")
+    except Exception:
+        pass
+
+
+def choose_backend(quick: bool = False):
+    """Returns (backend or None, problem text). quick, for doctor: pynput is looked for, not imported."""
     if sys.platform.startswith("linux"):
         evdev = EvdevBackend()
         if evdev.usable():
             return evdev, ""
         pynput_ok = bool(os.environ.get("DISPLAY")) and not os.environ.get("WAYLAND_DISPLAY")
-        if pynput_ok and PynputBackend().usable():
+        if pynput_ok and PynputBackend().usable(quick):
             return PynputBackend(), ""
         return None, (
             "cannot read the keyboard. Add your user to the 'input' group, then log out and back in:\n"
             "    sudo usermod -aG input $USER"
         )
     backend = PynputBackend()
-    if backend.usable():
+    if backend.usable(quick):
         return backend, ""
     return None, "the 'pynput' package is not available"

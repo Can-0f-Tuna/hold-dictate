@@ -11,6 +11,10 @@ TERMINALS = ("alacritty", "konsole", "kitty", "foot", "ghostty", "wezterm", "pty
 
 
 def _run(cmd, **kw):
+    if sys.platform == "darwin":
+        from .macos import spawn_options
+        cmd, extra = spawn_options(cmd)
+        kw = {**extra, **kw}
     return subprocess.run(cmd, capture_output=True, timeout=kw.pop("timeout", 2), **kw)
 
 
@@ -194,6 +198,26 @@ def _linux_x11(text: str, shift: bool, submit: bool) -> str:
 
 
 def _mac(text: str, shift: bool, submit: bool) -> str:
+    try:
+        from . import macos
+        board = macos.Clipboard()
+    except Exception:  # no AppKit: plain text only
+        return _mac_plain(text, shift, submit)
+    board.put(text)
+    try:
+        _pynput_paste(shift)
+    except Exception as e:
+        return f"text copied to the clipboard; press Cmd+V ({e})"
+    # A fixed 0.3 s put the old clipboard back before a busy app had read the new one, which then pasted the
+    # old text, or nothing: the old contents weren't text.
+    board.wait_read()
+    if submit:
+        _pynput_enter()
+    board.restore()
+    return ""
+
+
+def _mac_plain(text: str, shift: bool, submit: bool) -> str:
     old = _run(["pbpaste"])
     subprocess.run(["pbcopy"], input=text.encode("utf-8"))
     try:

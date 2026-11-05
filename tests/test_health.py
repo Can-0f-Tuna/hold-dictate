@@ -58,24 +58,44 @@ def test_a_check_that_cannot_run_says_so(server, monkeypatch):  # noqa: F811
 def mac(monkeypatch):
     def setup(access):
         monkeypatch.setattr(health.sys, "platform", "darwin")
-        monkeypatch.setattr("hold_dictate.hotkey.choose_backend", lambda: (type("B", (), {"name": "pynput"})(), ""))
+        monkeypatch.setattr("hold_dictate.hotkey.choose_backend", lambda quick=False: (type("B", (), {"name": "pynput"})(), ""))
         monkeypatch.setattr(health, "mac_access", lambda: access)
+        monkeypatch.setattr(health, "_app_rows", lambda: None)
+        monkeypatch.setattr("hold_dictate.macos.grantee", lambda: ("python3.12", "/opt/py/bin/python3.12"))
         return health.checks(Config(background_audio="off", provider="local"), online=False)
     return setup
 
 
 def test_macos_shows_which_permission_is_missing(mac):
-    rows = mac({"Input Monitoring": True, "Accessibility": False, "Microphone": True})
+    rows = mac({"Accessibility": False, "Microphone": True})
     bad = [r for r in rows if "permission" in r["text"] and not r["ok"]]
-    assert [r["text"] for r in bad] == ["macOS Accessibility permission"]
-    assert "Privacy & Security > Accessibility" in bad[0]["fix"]
+    assert [r["text"] for r in bad] == ["macOS Accessibility permission for python3.12"]
+    assert "Privacy & Security > Accessibility and turn on python3.12 (/opt/py/bin/python3.12)" in bad[0]["fix"]
+    assert not any("Input Monitoring" in r["text"] for r in rows)  # Accessibility covers the shortcut
 
 
 def test_macos_not_asked_yet_is_no_failure(mac):
-    rows = mac({"Input Monitoring": True, "Accessibility": True, "Microphone": None})
+    rows = mac({"Accessibility": True, "Microphone": None})
     assert row(rows, "Microphone")["ok"] and "will ask" in row(rows, "Microphone")["text"]
 
 
 @pytest.mark.skipif(sys.platform != "darwin", reason="asks macOS itself")
 def test_macos_answers_for_every_permission():
     assert set(health.mac_access()) == set(health.MAC_NEEDS)
+
+
+def test_doctor_in_a_terminal_asks_the_running_app_for_its_permissions(server, monkeypatch):  # noqa: F811
+    """In Terminal macOS answers for Terminal; the running app knows its own."""
+    import types
+    monkeypatch.setattr(health.sys, "platform", "darwin")
+    monkeypatch.setattr("hold_dictate.hotkey.choose_backend", lambda quick=False: (type("B", (), {"name": "pynput"})(), ""))
+    monkeypatch.setattr(health, "mac_access", lambda: {"Accessibility": False, "Microphone": False})  # the terminal's
+    app_rows = [{"ok": True, "text": "macOS Accessibility permission for python3.12", "fix": ""},
+                {"ok": True, "text": "microphone found", "fix": ""}]
+    monkeypatch.setattr(health.subprocess, "run", lambda *a, **kw: types.SimpleNamespace(stdout=json.dumps({"ok": True, "checks": app_rows})))
+    rows = health.checks(Config(background_audio="off", provider="local"), online=False)
+    perms = [r for r in rows if r["text"].startswith("macOS ")]
+    assert perms == [{"ok": True, "text": "macOS Accessibility permission for python3.12, in the running hold-dictate", "fix": ""}]
+    monkeypatch.setenv(health.CHILD, "1")  # the app's own checks look for themselves
+    rows = health.checks(Config(background_audio="off", provider="local"), online=False)
+    assert [r["ok"] for r in rows if r["text"].startswith("macOS ")] == [False, False]

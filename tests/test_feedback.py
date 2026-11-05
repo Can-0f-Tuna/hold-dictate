@@ -48,3 +48,19 @@ def test_without_the_pill_a_problem_is_a_notification(monkeypatch):
     monkeypatch.setattr(fb, "notify", notified.append)
     fb.error("no API key yet.")
     assert notified == ["No API key yet."]
+
+
+def test_macos_beeps_never_open_a_portaudio_stream(monkeypatch):
+    """A PortAudio output on the device that is recording sets its rate, and the recording comes out silent."""
+    import sys
+    import types
+    from hold_dictate import macos
+    played = []
+    monkeypatch.setattr(feedback.sys, "platform", "darwin")
+    monkeypatch.setattr(feedback.threading, "Thread", lambda target, daemon: type("T", (), {"start": lambda self: target()})())
+    monkeypatch.setattr(macos, "play_sound", played.append)
+    monkeypatch.setitem(sys.modules, "sounddevice", types.SimpleNamespace(play=lambda *a: played.append("portaudio")))
+    fb = feedback.Feedback.__new__(feedback.Feedback)
+    fb.cfg = Config(beeps=True)
+    fb._beep("start")
+    assert len(played) == 1 and played[0] is feedback.TONES["start"]

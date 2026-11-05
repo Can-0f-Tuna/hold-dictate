@@ -94,8 +94,15 @@ class Feedback:
             return
         def play():
             try:
-                import sounddevice as sd
-                sd.play(TONES[name], SAMPLE_RATE)
+                if sys.platform == "darwin":
+                    # Not PortAudio: an output stream on the device that also records (a headset, a Mac's own
+                    # speakers and mic in one device) makes PortAudio set that device's rate, and the recording
+                    # that just started comes out silent.
+                    from . import macos
+                    macos.play_sound(TONES[name])
+                else:
+                    import sounddevice as sd
+                    sd.play(TONES[name], SAMPLE_RATE)
             except Exception:
                 pass
         threading.Thread(target=play, daemon=True).start()
@@ -151,7 +158,8 @@ class Feedback:
         try:
             if sys.platform == "darwin":
                 safe = message.replace('"', "'")
-                subprocess.run(["osascript", "-e", f'display notification "{safe}" with title "hold-dictate"'], timeout=3)
+                subprocess.run(["/usr/bin/osascript", "-e", f'display notification "{safe}" with title "hold-dictate"'], timeout=3,
+                               close_fds=False)  # posix_spawn, not fork (see macos.spawn_options)
             elif sys.platform.startswith("linux") and shutil.which("notify-send"):
                 subprocess.run(["notify-send", "hold-dictate", message], timeout=3)
         except Exception:
