@@ -425,14 +425,27 @@ def run(cfg: Config) -> int:
         updater.tick()
         extensions.tick()
 
+    def on_keyboard_problem(text: str):
+        server.problem = text or problem
+        if text and sys.platform == "darwin":
+            from . import macos
+            feedback.notify(f"Turn on {macos.grantee()[0]} in System Settings > Privacy & Security > Accessibility to use the shortcut.")
+
+    lost = threading.Event()  # the keyboard listener ended by itself
+
     def listen():
         if backend is None:
             while not done.wait(5):
                 tick()
             return
+        if hasattr(backend, "on_problem"):
+            backend.on_problem = on_keyboard_problem
         try:
             backend.run(detector, dictation.on_action, tick)
         finally:
+            if not done.is_set():
+                lost.set()
+                print("hold-dictate: the keyboard listener stopped; quitting so the login service starts it again", file=sys.stderr, flush=True)
             done.set()
 
     done = threading.Event()
@@ -455,4 +468,4 @@ def run(cfg: Config) -> int:
     except KeyboardInterrupt:
         pass
     server.stop()
-    return 0
+    return 1 if lost.is_set() else 0

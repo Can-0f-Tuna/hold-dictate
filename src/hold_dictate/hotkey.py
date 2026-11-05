@@ -214,6 +214,7 @@ def _pynput_name(key) -> str | None:
 
 class PynputBackend:
     name = "pynput"
+    on_problem = None  # macOS: called with what to turn on while the keyboard can't be read, and '' once it can
 
     def usable(self) -> bool:
         try:
@@ -281,20 +282,52 @@ class PynputBackend:
         elif sys.platform == "darwin":
             extra["darwin_intercept"] = mac_intercept
             listener_class = _mac_listener_class(keyboard.Listener)
-        listener = listener_class(
-            on_press=lambda k: handle(k, True), on_release=lambda k: handle(k, False), **extra
-        )
-        listener.start()
-        while listener.is_alive():
-            time.sleep(min(tick_seconds, 1.0))
+        while True:
             if sys.platform == "darwin":
-                _mac_check_tap(listener)
+                self._mac_wait_for_access(on_tick)
+            listener = listener_class(
+                on_press=lambda k: handle(k, True), on_release=lambda k: handle(k, False), **extra
+            )
+            listener.start()
+            while listener.is_alive():
+                time.sleep(min(tick_seconds, 1.0))
+                if sys.platform == "darwin":
+                    _mac_check_tap(listener)
+                if on_tick:
+                    on_tick()
+            if sys.platform != "darwin" or _mac_trusted():
+                return  # gone for good: the caller exits with an error, and a login service starts it again
+            # macOS: Accessibility was switched off while running; wait for it to come back
+
+    def _mac_wait_for_access(self, on_tick):
+        """Without Accessibility pynput's tap can't start. Asks once, says what to turn on, and goes on as soon
+        as it is on: a running app used to ignore the switch until a restart."""
+        from . import macos
+        if _mac_trusted():
+            return
+        macos.ask_accessibility()
+        print(f"hold-dictate: {macos.accessibility_problem().replace(chr(10), ' ')}", file=sys.stderr, flush=True)
+        if self.on_problem:
+            self.on_problem(macos.accessibility_problem())
+        while not _mac_trusted():
+            time.sleep(1)
             if on_tick:
                 on_tick()
+        print("hold-dictate: Accessibility is on; the shortcut works now", flush=True)
+        if self.on_problem:
+            self.on_problem("")
 
 
 # kCGEventTapDisabledByTimeout, kCGEventTapDisabledByUserInput: macOS tells the tap it was switched off this way
 _MAC_TAP_OFF = (0xFFFFFFFE, 0xFFFFFFFF)
+
+
+def _mac_trusted() -> bool:
+    from . import macos
+    try:
+        return macos.accessibility_trusted()
+    except Exception:
+        return True  # can't tell: let pynput try
 
 
 def _mac_listener_class(base):

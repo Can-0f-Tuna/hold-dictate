@@ -151,3 +151,23 @@ def test_the_os_hook_returns_before_the_recording_starts(fake_pynput):
             break
         threading.Event().wait(0.02)
     assert actions == ["start", "stop"]
+
+
+def test_macos_waits_for_accessibility_and_then_listens_without_a_restart(fake_pynput, monkeypatch):
+    from hold_dictate import hotkey, macos
+    monkeypatch.setattr(sys, "platform", "darwin")
+    answers = iter([False, False, True])
+    monkeypatch.setattr(hotkey, "_mac_trusted", lambda: next(answers, True))
+    monkeypatch.setattr(macos, "ask_accessibility", lambda: None)
+    monkeypatch.setattr(macos, "grantee", lambda: ("python3.12", "/opt/py/bin/python3.12"))
+    monkeypatch.setattr(hotkey.time, "sleep", lambda s: None)
+    backend, problems, actions = hotkey.PynputBackend(), [], []
+    backend.on_problem = problems.append
+    backend.run(HoldDetector(parse_hotkey("alt+space")), actions.append, tick_seconds=0.01)
+    assert len(problems) == 2 and problems[1] == ""
+    assert "Accessibility" in problems[0] and problems[0].endswith("\n    /opt/py/bin/python3.12")
+    for _ in range(100):
+        if len(actions) == 2:
+            break
+        threading.Event().wait(0.02)
+    assert actions == ["start", "stop"]  # the listener started once it was allowed
