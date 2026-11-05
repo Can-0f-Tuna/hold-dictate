@@ -36,6 +36,8 @@ MIC_WAIT = 1.5  # the start cue comes when the mic is live, or after this long i
 TAIL_SECONDS = 0.2  # recording goes on this long after the release: people let go before the last word ends
 TAIL_GRACE = 0.04  # a stalled stream gets this much more; with audio.CLOSE_WAIT, a clip ends within tail + 100 ms
 PRUNE_SECONDS = 3600  # how often old history is cleared out, for days with no dictation
+JOIN_SECONDS = 90  # a dictation this soon after the last one, into the same app, carries on its sentence
+NO_SPACE_BEFORE = ".,;:!?)]}%\u2026\u00bb\u201d\u2019\u05c3"  # \u2026 ellipsis, \u05c3 Hebrew sof pasuq
 
 
 class Tail:
@@ -87,6 +89,7 @@ class Dictation:
         self.last_used = time.monotonic()
         self.last_text = ""  # the last dictation, kept in memory only, for paste-last and copy-last
         self.last_app = ""  # the app it went to, offered on the settings page for a per-app rule
+        self.follows = None  # (app, when, text) of the last text typed into an app, for the space before the next
         self.lock = threading.RLock()
         self.paste_lock = threading.Lock()
         self.threads: list[threading.Thread] = []
@@ -143,8 +146,14 @@ class Dictation:
         self.pressed_at = self.last_used = time.monotonic()
         threading.Thread(target=self._cue_when_live, args=(self.recorder,), daemon=True).start()
         if self._types_live():
-            app = self.live_app  # the next recording has its own
-            self.live = LiveTyper(self.recorder, self._transcribe_live, lambda raw: textproc.clean(raw, self.cfg), lambda text: self._type_live(text, app),
+            app, first = self.live_app, [True]  # the next recording has its own
+
+            def type_live(text):
+                if first:
+                    first.clear()
+                    text = self._spaced(text, app)
+                return self._type_live(text, app)
+            self.live = LiveTyper(self.recorder, self._transcribe_live, lambda raw: textproc.clean(raw, self.cfg), type_live,
                                   ready=lambda: sys.platform.startswith("linux") or self.latched,
                                   **({"gap": 1.0, "per_minute": 0, "at_pauses": True} if self.cfg.provider == "local" and not extensions.transcribes(self.cfg) else {}))
             self.live.start()
@@ -270,8 +279,10 @@ class Dictation:
             return
         self.fb.clear_problem()
         rule = paste.rule_for(self.cfg.app_rules, app)
-        if rule == "submit" or (self.cfg.auto_submit and rule != "paste"):
+        submitted = rule == "submit" or (self.cfg.auto_submit and rule != "paste")
+        if submitted:
             paste.press_enter()
+        self._followed(app, text, submitted)
         self._remember(text, text, app)
         extensions.after_dictation(self, recording, text, text, text, app)
 
@@ -335,12 +346,28 @@ class Dictation:
             shift = {"shift": True, "paste": False}.get(rule)  # None: terminals get Ctrl+Shift+V
             submit = submit_allowed and (rule == "submit" or (self.cfg.auto_submit and rule != "paste"))
             with self.paste_lock:
-                note = self.paster(text, app=app, shift=shift, submit=submit)
+                note = self.paster(self._spaced(text, app), app=app, shift=shift, submit=submit)
+            if not note:
+                self._followed(app, text, submit)
         if note:
             self.fb.error(note)
         else:
             self.fb.clear_problem()
         return not note and rule != "clipboard"
+
+    def _spaced(self, text: str, app: str) -> str:
+        """Two dictations in a row into the same app ran together ("now.Can"): the next one gets a space before
+        it, unless the last one ended in a space or a new line, or this one starts with punctuation."""
+        last = self.follows
+        if not last or not text or not app or last[0] != app or time.monotonic() - last[1] > JOIN_SECONDS:
+            return text
+        if last[2][-1:].isspace() or text[0].isspace() or text[0] in NO_SPACE_BEFORE:
+            return text
+        return " " + text
+
+    def _followed(self, app: str, text: str, submitted: bool):
+        """Enter after it starts a new line or message: the next one needs no space."""
+        self.follows = None if submitted or not text else (app, time.monotonic(), text)
 
     def paste_last(self) -> str:
         """Pastes the last dictation again into the focused app (never presses Enter)."""

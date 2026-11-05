@@ -498,3 +498,35 @@ def test_a_press_after_the_local_model_was_freed_loads_it_while_you_speak(monkey
     d.begin()
     assert loads == [1]
     d.finish()
+
+
+def test_a_dictation_right_after_the_last_one_in_the_same_app_gets_a_space(api, monkeypatch):
+    api.text = "Now."
+    d, out, _ = dictation(cfg_for(api), app="TextEdit")
+    tap(d, 0.3)
+    settle(d)
+    api.text = "Can we"
+    tap(d, 0.3)
+    settle(d)
+    api.text = ", then"  # punctuation first: no space
+    tap(d, 0.3)
+    settle(d)
+    assert [c["text"] for c in out.calls] == ["Now.", " Can we", ", then"]
+    assert d.last_text == ", then"  # the space is only for the paste
+    d.focus = lambda: "Safari"  # another app
+    tap(d, 0.3)
+    settle(d)
+    monkeypatch.setattr("hold_dictate.app.JOIN_SECONDS", -1)  # as if much later
+    tap(d, 0.3)
+    settle(d)
+    assert [c["text"] for c in out.calls[3:]] == [", then", ", then"]
+
+
+def test_after_enter_the_next_dictation_starts_clean(api):
+    api.text = "sent"
+    d, out, _ = dictation(cfg_for(api, auto_submit=True), app="Slack")
+    tap(d, 0.3)
+    settle(d)
+    tap(d, 0.3)
+    settle(d)
+    assert [c["text"] for c in out.calls] == ["sent", "sent"]
