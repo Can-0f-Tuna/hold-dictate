@@ -208,3 +208,21 @@ def test_the_model_loads_in_the_background_once(monkeypatch):
     while not out and time.monotonic() < deadline:
         time.sleep(0.01)
     assert out == ["hi"] and FakeWhisper.made == ["small"]
+
+
+def test_a_model_that_must_be_downloaded_first_says_so(monkeypatch):
+    import sys
+    import types
+    from hold_dictate import providers
+    from hold_dictate.providers import LocalTranscriber
+    FakeWhisper.made = []
+    monkeypatch.setitem(sys.modules, "faster_whisper", types.SimpleNamespace(WhisperModel=FakeWhisper))
+    cached = {"small": False}
+    monkeypatch.setattr(providers, "model_cached", lambda name: cached[name])
+    local, told = LocalTranscriber(config.Config(provider="local")), []
+    local.on_download = lambda model, started: told.append((model, started))
+    local.load()
+    assert told == [("small", True), ("small", False)]
+    local.model, cached["small"] = None, True
+    local.load()
+    assert len(told) == 2  # on disk now: nothing to say

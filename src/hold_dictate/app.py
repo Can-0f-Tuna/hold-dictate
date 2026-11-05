@@ -73,6 +73,7 @@ class Dictation:
         self.on_no_key = on_no_key
         self.fb = feedback
         self.local = LocalTranscriber(cfg)
+        self.local.on_download = self._downloading
         self.recorder_factory = recorder_factory or audio.Recorder
         self.paster = paster or paste.paste_text
         self.focus = focus or paste.focused_app
@@ -115,6 +116,15 @@ class Dictation:
                     self.finish()
                 else:
                     self.latched = True
+
+    def _downloading(self, model: str, started: bool):
+        """The first load of a model downloads it, which takes minutes: say so, or the first dictation just hangs."""
+        if started:
+            print(f"hold-dictate: downloading the offline model {model}", flush=True)
+            self.fb.notify("Downloading the offline model. It takes a few minutes, once; dictation waits for it.")
+        else:
+            print(f"hold-dictate: the offline model {model} is ready", flush=True)
+            self.fb.notify("The offline model is ready.")
 
     def _level(self, value: float):
         self.fb.level(value)

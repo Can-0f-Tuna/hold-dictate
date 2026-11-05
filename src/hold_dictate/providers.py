@@ -174,6 +174,18 @@ def physical_cores(cpuinfo: str = "/proc/cpuinfo") -> int:
     return max(1, min(found, logical) if found else logical // 2)
 
 
+def model_cached(name: str) -> bool:
+    """Whether a faster-whisper model is on this computer already, so loading it downloads nothing."""
+    if os.path.isdir(name):
+        return True
+    try:
+        from faster_whisper.utils import download_model
+        download_model(name, local_files_only=True)
+        return True
+    except Exception:
+        return False
+
+
 class LocalTranscriber:
     """faster-whisper, loaded on first use or ahead of it, and freed after a stretch of inactivity."""
 
@@ -182,6 +194,7 @@ class LocalTranscriber:
         self.model = None
         self.loaded = ""  # name of the model in memory, so a change in the settings loads the new one
         self.lock = threading.Lock()  # the live words and the final text can ask at the same time
+        self.on_download = None  # called with (model, True) when a model has to be downloaded first, (model, False) after
 
     def preload(self):
         """Loads the model in the background, so the first dictation doesn't wait for it. A dictation that comes
@@ -215,8 +228,16 @@ class LocalTranscriber:
                     'uv tool install "hold-dictate[local]"',
                     "Local transcription isn't installed. Pick another service in the settings.",
                 ) from e
-            self.model = WhisperModel(self.cfg.local_model, device="cpu", compute_type="int8", cpu_threads=physical_cores())
-            self.loaded = self.cfg.local_model
+            name = self.cfg.local_model
+            fetch = bool(self.on_download) and not model_cached(name)
+            if fetch:
+                self.on_download(name, True)
+            try:
+                self.model = WhisperModel(name, device="cpu", compute_type="int8", cpu_threads=physical_cores())
+            finally:
+                if fetch:
+                    self.on_download(name, False)
+            self.loaded = name
         return self.model
 
     def unload(self):
