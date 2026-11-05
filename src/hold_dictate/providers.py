@@ -1,5 +1,7 @@
 """Speech-to-text backends: any OpenAI-compatible HTTP API, or faster-whisper on this machine."""
 import json
+import os
+import sys
 import urllib.error
 import urllib.request
 import threading
@@ -144,14 +146,52 @@ def check_api(cfg: Config) -> str:
         return f"could not reach {base}: {e}"
 
 
+def physical_cores(cpuinfo: str = "/proc/cpuinfo") -> int:
+    """Cores, not hardware threads: CTranslate2 gains nothing from a core's second thread, and loses when it gets half
+    the cores of a computer that has none (Apple silicon, Intel Core Ultra 200). Measured in the accuracy harness
+    (eval/speed.py): on 8 cores without SMT, 8 threads took a pass from 4.6 s to 3.1 s, the same text."""
+    import subprocess
+    logical = os.cpu_count() or 2
+    try:
+        if sys.platform == "darwin":
+            found = int(subprocess.run(["sysctl", "-n", "hw.physicalcpu"], capture_output=True, text=True, timeout=2).stdout)
+        else:
+            with open(cpuinfo, encoding="utf-8") as f:
+                cores, current = set(), {}
+                for line in f:
+                    key, _, value = line.partition(":")
+                    key = key.strip()
+                    if key in ("physical id", "core id"):
+                        current[key] = value.strip()
+                    elif not key:
+                        cores.add((current.get("physical id"), current.get("core id")))
+                        current = {}
+                cores.add((current.get("physical id"), current.get("core id")))
+                found = len({c for c in cores if c[1] is not None})
+    except (OSError, ValueError, subprocess.SubprocessError):
+        found = 0
+    return max(1, min(found, logical) if found else logical // 2)
+
+
 class LocalTranscriber:
-    """faster-whisper, loaded on first use and freed after a stretch of inactivity."""
+    """faster-whisper, loaded on first use or ahead of it, and freed after a stretch of inactivity."""
 
     def __init__(self, cfg: Config):
         self.cfg = cfg
         self.model = None
         self.loaded = ""  # name of the model in memory, so a change in the settings loads the new one
         self.lock = threading.Lock()  # the live words and the final text can ask at the same time
+
+    def preload(self):
+        """Loads the model in the background, so the first dictation doesn't wait for it. A dictation that comes
+        first waits for the load in progress instead of starting another."""
+        def run():
+            try:
+                with self.lock:
+                    self.load()
+            except Exception as e:  # the dictation reports it
+                print(f"hold-dictate: the local model didn't load yet: {e}", file=sys.stderr, flush=True)
+        threading.Thread(target=run, daemon=True).start()
 
     @staticmethod
     def available() -> bool:
@@ -173,10 +213,7 @@ class LocalTranscriber:
                     'uv tool install "hold-dictate[local]"',
                     "Local transcription isn't installed. Pick another service in the settings.",
                 ) from e
-            import os
-            self.model = WhisperModel(
-                self.cfg.local_model, device="cpu", compute_type="int8", cpu_threads=max(1, (os.cpu_count() or 2) // 2)
-            )
+            self.model = WhisperModel(self.cfg.local_model, device="cpu", compute_type="int8", cpu_threads=physical_cores())
             self.loaded = self.cfg.local_model
         return self.model
 

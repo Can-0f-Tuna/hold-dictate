@@ -463,3 +463,38 @@ def test_the_start_cue_waits_for_the_mic(monkeypatch):
     d.recorder.live.set()
     time.sleep(0.2)
     assert fb.log.count("recording") == 1
+
+
+def test_on_the_local_model_a_phrase_goes_out_only_once_it_ends_in_a_pause():
+    """A pass mid-phrase would be done again at the end; at a pause the text is final and only the rest is left."""
+    talking = np.concatenate([TONE] * 4)
+    paused = np.concatenate([talking, QUIET, QUIET])
+    sent = []
+    live, typed = typer(Clips(talking, talking, paused), iter(["one two three"]), at_pauses=True)
+    live.transcribe = lambda s: sent.append(len(s)) or "one two three"
+    live.start()
+    wait_for(lambda: typed)
+    live.stop()
+    assert typed == ["one two three"] and len(sent) == 1 and live.start_at == len(paused)
+    more = np.concatenate([paused, TONE])
+    assert live.finish(more, lambda s: "four") == "one two three four"
+
+
+def test_on_the_local_model_a_short_phrase_waits_for_the_next_one():
+    """Every local pass costs about the same, so a phrase goes out once it is long enough to be worth one."""
+    live, typed = typer(Clips(np.concatenate([TONE, QUIET])), iter([]), at_pauses=True)
+    live.transcribe = lambda s: typed.append("sent") or "one"
+    live.start()
+    time.sleep(0.5)
+    live.stop()
+    assert typed == []
+
+
+def test_a_press_after_the_local_model_was_freed_loads_it_while_you_speak(monkeypatch):
+    from hold_dictate.providers import LocalTranscriber
+    loads = []
+    monkeypatch.setattr(LocalTranscriber, "preload", lambda self: loads.append(1))
+    d = Dictation(Config(provider="local", min_hold=9), FakeFeedback(), recorder_factory=FakeRecorder)
+    d.begin()
+    assert loads == [1]
+    d.finish()

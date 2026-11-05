@@ -157,3 +157,54 @@ nested = "yes"
 def test_a_setting_in_extra_falls_back_to_its_default():
     cfg = config.Config(extra={"table": "not a table", "flag": True})
     assert cfg.setting("table", {}) == {} and cfg.setting("flag", False) is True and cfg.setting("missing", "x") == "x"
+
+
+def cpuinfo(tmp_path, cores, threads):
+    blocks = [f"processor\t: {i}\nphysical id\t: 0\ncore id\t\t: {i // threads}\n" for i in range(cores * threads)]
+    path = tmp_path / "cpuinfo"
+    path.write_text("\n".join(blocks))
+    return str(path)
+
+
+@pytest.mark.parametrize("cores, threads, logical, expected", [
+    (4, 2, 8, 4),  # hyperthreading: one thread per core
+    (8, 1, 8, 8),  # none (Apple silicon, Core Ultra 200): every core, not half of them
+    (20, 1, 8, 8),  # limited to fewer processors than the machine has
+])
+def test_the_local_model_gets_a_thread_per_core(tmp_path, monkeypatch, cores, threads, logical, expected):
+    import os
+    import sys
+    from hold_dictate.providers import physical_cores
+    monkeypatch.setattr(sys, "platform", "linux")
+    monkeypatch.setattr(os, "cpu_count", lambda: logical)
+    assert physical_cores(cpuinfo(tmp_path, cores, threads)) == expected
+    assert physical_cores(str(tmp_path / "missing")) == logical // 2
+
+
+class FakeWhisper:
+    made = []
+
+    def __init__(self, name, **kw):
+        FakeWhisper.made.append(name)
+
+    def transcribe(self, sound, **kw):
+        info = type("Info", (), {"language": kw.get("language") or "en"})
+        return iter([type("Segment", (), {"text": " hi "})]), info
+
+
+def test_the_model_loads_in_the_background_once(monkeypatch):
+    import sys
+    import threading
+    import time
+    import types
+    from hold_dictate.providers import LocalTranscriber
+    FakeWhisper.made = []
+    monkeypatch.setitem(sys.modules, "faster_whisper", types.SimpleNamespace(WhisperModel=FakeWhisper))
+    local = LocalTranscriber(config.Config(provider="local"))
+    local.preload()
+    out = []
+    threading.Thread(target=lambda: out.append(local.transcribe(tone(1)))).start()
+    deadline = time.monotonic() + 2
+    while not out and time.monotonic() < deadline:
+        time.sleep(0.01)
+    assert out == ["hi"] and FakeWhisper.made == ["small"]

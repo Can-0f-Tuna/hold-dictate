@@ -3,7 +3,11 @@
 Whisper services take a finished clip, not a stream, so this sends the phrase in progress every few seconds.
 Typed text can't be taken back, and the last words of a clip are the ones Whisper still changes, so they wait
 for the next request. A phrase that ends in a pause is typed in full and the next one starts, which keeps each
-request short."""
+request short.
+
+On this computer's own model (`at_pauses`) a request takes the processor for a second or more and can't be stopped,
+so one sent halfway through a phrase would be done again and hold up the end. There a phrase goes out only once it
+ends in a pause, and its text is final: when you let go, only what you said after the last pause is left."""
 import sys
 import threading
 import time
@@ -14,6 +18,10 @@ from . import audio
 SHORTEST = 2 * audio.SAMPLE_RATE  # on less than this Whisper guesses, and a guess that gets typed stays
 LONGEST = 20 * audio.SAMPLE_RATE  # no pause for this long: cut anyway, or requests keep growing
 UNSURE_WORDS = 2  # held back from the end of a phrase still being spoken
+# at_pauses: a phrase goes out at a pause only once it is this long. Each local pass costs about the same whatever its
+# length, so fewer passes leave fewer of them in flight when you let go; shorter phrases also lost words at the cuts.
+# On the owner's 19 s dictations: 2 s gave a p90 wait of 5.2 s against 3.8 s for one pass, 8 s gave 3.2 s.
+PHRASE_AT_PAUSES = 8 * audio.SAMPLE_RATE
 
 
 class LiveTyper:
@@ -24,7 +32,8 @@ class LiveTyper:
     PER_MINUTE = 18  # Groq's free tier allows 20 a minute; this leaves room for the last pass
     sent = deque()  # when requests went out, across recordings: dictating again must not break the limit
 
-    def __init__(self, recorder, transcribe, clean, type_text, ready=lambda: True, gap: float = GAP, per_minute: int = PER_MINUTE):
+    def __init__(self, recorder, transcribe, clean, type_text, ready=lambda: True, gap: float = GAP, per_minute: int = PER_MINUTE,
+                 at_pauses: bool = False, shortest: int | None = None):
         self.recorder = recorder
         self.transcribe = transcribe  # audio -> text
         self.clean = clean  # text -> text, the usual clean-up
@@ -32,6 +41,8 @@ class LiveTyper:
         self.ready = ready  # False while typing would collide with the keys you hold
         self.gap = gap
         self.per_minute = per_minute  # 0: no limit
+        self.at_pauses = at_pauses  # send only phrases that ended in a pause
+        self.shortest = shortest or (PHRASE_AT_PAUSES if at_pauses else SHORTEST)  # samples: a phrase goes out once this long
         self.steps = 0  # requests in this recording
         self.not_before = 0.0  # no requests until then
         self.stopped = threading.Event()
@@ -53,7 +64,10 @@ class LiveTyper:
                 continue
             sound = self.recorder.snapshot()
             phrase = sound[self.start_at:]
-            if len(phrase) < SHORTEST:
+            if len(phrase) < self.shortest:
+                continue
+            ended = audio.ends_quiet(phrase) or len(phrase) >= LONGEST
+            if self.at_pauses and not ended:
                 continue
             speech = audio.speech_only(phrase)
             if speech is None:
@@ -68,7 +82,6 @@ class LiveTyper:
                 print(f"hold-dictate: live typing paused for {self.AFTER_ERROR} seconds: {e}", file=sys.stderr, flush=True)
                 self.not_before = time.monotonic() + self.AFTER_ERROR
                 continue
-            ended = audio.ends_quiet(phrase) or len(phrase) >= LONGEST
             if self._type(words if ended else words[:-UNSURE_WORDS]) and ended:
                 self.start_at, self.phrase = len(sound), 0
             if self.note:
