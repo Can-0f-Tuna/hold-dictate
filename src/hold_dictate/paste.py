@@ -194,6 +194,24 @@ def _linux_x11(text: str, shift: bool, submit: bool) -> str:
 
 
 def _mac(text: str, shift: bool, submit: bool) -> str:
+    try:
+        from . import macos
+        board = macos.Clipboard()
+    except Exception:  # no AppKit: plain text only
+        return _mac_plain(text, shift, submit)
+    board.put(text)
+    try:
+        _pynput_paste(shift)
+    except Exception as e:
+        return f"text copied to the clipboard; press Cmd+V ({e})"
+    time.sleep(0.3)
+    if submit:
+        _pynput_enter()
+    board.restore()
+    return ""
+
+
+def _mac_plain(text: str, shift: bool, submit: bool) -> str:
     old = _run(["pbpaste"])
     subprocess.run(["pbcopy"], input=text.encode("utf-8"))
     try:

@@ -90,3 +90,43 @@ def play_sound(samples):
         subprocess.run(["/usr/bin/afplay", f.name], capture_output=True, timeout=5)
     finally:
         os.unlink(f.name)
+
+
+class Clipboard:
+    """The pasteboard for one paste: it keeps every item and type that was there (images, rich text, files, not
+    only the plain text pbcopy knows), puts the text up, and puts the old contents back."""
+
+    def __init__(self):
+        from AppKit import NSPasteboard
+        self.board = NSPasteboard.generalPasteboard()
+        self.saved = []
+        for item in self.board.pasteboardItems() or []:
+            kinds = {}
+            for kind in item.types() or []:
+                data = item.dataForType_(kind)
+                if data is not None:
+                    kinds[kind] = data
+            if kinds:
+                self.saved.append(kinds)
+        self.ours = None  # the board's change count once the text is up
+
+    def put(self, text: str):
+        from AppKit import NSPasteboardTypeString
+        self.board.clearContents()
+        self.board.setString_forType_(text, NSPasteboardTypeString)
+        self.ours = self.board.changeCount()
+
+    def restore(self):
+        """Unless something else was copied in the meantime: that is newer than what we kept."""
+        from AppKit import NSPasteboardItem
+        if self.ours is not None and self.board.changeCount() != self.ours:
+            return
+        self.board.clearContents()
+        items = []
+        for kinds in self.saved:
+            item = NSPasteboardItem.alloc().init()
+            for kind, data in kinds.items():
+                item.setData_forType_(data, kind)
+            items.append(item)
+        if items:
+            self.board.writeObjects_(items)
