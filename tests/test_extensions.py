@@ -189,6 +189,15 @@ def test_the_service_in_the_settings_takes_what_an_extension_leaves_or_fails(api
     assert ("an extension failed in transcribe" in capsys.readouterr().err) == (answer is not None)
 
 
+def test_a_transcribe_error_from_an_extension_is_its_answer(api, add):
+    from hold_dictate.providers import TranscribeError
+    add(Cloud(TranscribeError("the extension's own service failed", "Can't reach it.")))
+    d, out, fb = dictation(cfg_for(api))
+    tap(d, 0.3)
+    settle(d)
+    assert out.calls == [] and api.requests == [] and ("error", "Can't reach it.") in fb.log
+
+
 def test_an_extension_that_transcribes_needs_no_api_key(api, add):
     d, _, fb = dictation(cfg_for(api, api_key=""))
     d.on_action("start")
