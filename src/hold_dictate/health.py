@@ -6,6 +6,7 @@ import sys
 import urllib.request
 
 from . import extensions
+from .config import OFFLINE_COMMAND
 
 # Not Input Monitoring: the shortcut's event tap may change events (it hides Option+Space's space), and macOS
 # gives that kind of tap to Accessibility alone.
@@ -117,7 +118,7 @@ def checks(cfg, online: bool = True) -> list:
         for row in extensions.doctor_lines():
             line(*row)
     if cfg.provider == "local":
-        line(LocalTranscriber.available(), "local model library", 'Run this in a terminal: uv tool install --force "hold-dictate[local]"')
+        line(LocalTranscriber.available(), "local model library", f"Run this in a terminal: {OFFLINE_COMMAND}")
     elif online:
         problem = check_api(cfg)
         line(not problem, f"{cfg.preset()['label']} API key", problem or "Run `hold-dictate settings`.")

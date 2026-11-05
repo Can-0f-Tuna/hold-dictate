@@ -16,7 +16,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
 from . import __version__, config as cfgmod, ducking, extensions, health, history, textproc
-from .config import APP_RULES, DUCK_MODES, HISTORY_DAYS, HOTKEY_MODES, LANGUAGES, LOCAL_MODELS, OVERLAY_STYLES, PROVIDERS, Config
+from .config import APP_RULES, DUCK_MODES, HISTORY_DAYS, HOTKEY_MODES, LANGUAGES, LOCAL_MODELS, OFFLINE_COMMAND, OVERLAY_STYLES, PROVIDERS, Config
 
 PAGE = Path(__file__).with_name("settings.html")
 REOPEN = {"linux": "from your app menu (hold-dictate settings)", "darwin": "from the hold-dictate icon in the menu bar"}
@@ -149,8 +149,15 @@ class SettingsServer:
                 "latest": updater.latest if updater else "",
                 "available": bool(updater and updater.available()),
                 "status": updater.status if updater else "",
-                "progress": updater.progress if updater else None,
+                "progress": updater.progress if updater and updater.job != "offline" else None,
                 "can_update": (updater.can_update() if updater else "not running") or "",
+            },
+            "offline": {  # installing the offline engine from the button
+                "status": updater.offline_status if updater else "",
+                "progress": updater.progress if updater and updater.job == "offline" else None,
+                "ready": bool(updater and updater.job == "offline" and updater.ready),
+                "can_install": (updater.can_update() if updater else "not running") or "",
+                "command": OFFLINE_COMMAND,
             },
             "last": {"text": getattr(session, "last_text", "") or "", "app": getattr(session, "last_app", "") or ""},
             "fillers_default": list(textproc.FILLERS),
@@ -223,7 +230,7 @@ class SettingsServer:
         new = self.candidate(changes)
         if new.provider == "local":
             ok = importlib.util.find_spec("faster_whisper") is not None
-            return {"ok": ok, "message": "" if ok else 'Install the local model first: uv tool install --force "hold-dictate[local]"'}
+            return {"ok": ok, "message": "" if ok else f"Install the offline engine first: press Install, or run {OFFLINE_COMMAND} in a terminal."}
         problem = check_api(new)
         if " returned 401" in problem:
             problem = f"{new.preset()['label']} didn't accept this key. Check that you copied all of it."
@@ -278,6 +285,8 @@ class SettingsServer:
             self.updater.check()
         elif action == "install":
             self.updater.update_now()
+        elif action == "offline":
+            self.updater.offline_now()
         return self.state()
 
 
@@ -349,6 +358,7 @@ class _Handler(BaseHTTPRequestHandler):
                 "/api/service": self.app.start_service,
                 "/api/update/check": lambda: self.app.update("check"),
                 "/api/update/install": lambda: self.app.update("install"),
+                "/api/offline/install": lambda: self.app.update("offline"),
                 "/api/problem/clear": self.app.clear_problem,
                 "/api/last/copy": lambda: self.app.last("copy"),
                 "/api/last/paste": lambda: self.app.last("paste"),

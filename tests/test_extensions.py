@@ -361,9 +361,10 @@ def installed_with(monkeypatch):
 
 @pytest.mark.skipif(sys.platform == "win32", reason="Windows installs at restart, through a helper")
 def test_an_update_source_decides_what_is_installed(add, monkeypatch):
+    from hold_dictate import updater
     add(type("Ext", (), {"update_source": lambda self: Source()})())
     u, ran = installed_with(monkeypatch)
-    assert u.install() is True and ran == [["uv", "tool", "install", "--force", "--with", "extra.whl", "core@v99.0.0"]]
+    assert u.install() is True and ran == [["uv", "tool", "install", "--force", "--python", updater.install_python([]), "--with", "extra.whl", "core@v99.0.0"]]
 
 
 def test_a_failing_update_source_stays_on_this_version(add, monkeypatch):

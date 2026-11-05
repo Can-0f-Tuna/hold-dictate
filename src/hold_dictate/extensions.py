@@ -45,9 +45,12 @@ Settings and commands:
   extend_cli(commands)                        gets the argparse subparsers to add to
 Updates:
   update_source() -> source                   where updates come from instead of GitHub. source.latest() gives the
-                                              version tag and raises when it can't tell; source.install_args(tag)
-                                              gives what follows `uv tool install --force`. An update replaces the
-                                              whole install, so an extension must name itself in those arguments
+                                              version tag and raises when it can't tell; source.install_args(tag,
+                                              extras) gives what follows `uv tool install --force --python X`, with
+                                              the app as updater.install_spec(tag, extras). An update, and installing
+                                              the offline engine, replace the whole install, so an extension must
+                                              name itself in those arguments. A source whose install_args takes only
+                                              the tag still works, with the extras installed now
 """
 import sys
 from importlib.metadata import entry_points

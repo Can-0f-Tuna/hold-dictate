@@ -114,6 +114,7 @@ def test_update_command_installs_through_the_daemon(server, monkeypatch, capsys)
     asked = []
     server.updater = type("U", (), {
         "latest": "v9.9.9", "status": "", "progress": None, "available": lambda self: True, "can_update": lambda self: "",
+        "job": "", "offline_status": "", "ready": False,
         "update_now": lambda self: asked.append("install"),
     })()
     assert cli.main(["update"]) == 0
@@ -162,7 +163,7 @@ def test_hotkey_can_change_while_held():
 def test_version_compare_and_install_spec(monkeypatch):
     assert updater.newer("v0.10.0", "0.9.9") and not updater.newer("v0.3.0", "0.3.0")
     assert updater.parse_version("v1.2.3rc1") == (1, 2, 3)
-    assert updater.install_spec("v0.4.0").endswith("git+https://github.com/Can-0f-Tuna/hold-dictate@v0.4.0")
+    assert updater.install_spec("v0.4.0", []) == "hold-dictate @ https://github.com/Can-0f-Tuna/hold-dictate/archive/refs/tags/v0.4.0.tar.gz"
 
 
 def test_core_alone_updates_from_the_latest_github_release(monkeypatch):

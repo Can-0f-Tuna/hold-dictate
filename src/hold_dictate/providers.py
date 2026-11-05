@@ -10,7 +10,7 @@ import uuid
 
 from . import extensions
 from .audio import SAMPLE_RATE, Problem, wav_bytes
-from .config import HEBREW_PROMPT, LANGUAGE_NAMES, LANGUAGES, Config
+from .config import HEBREW_PROMPT, LANGUAGE_NAMES, LANGUAGES, OFFLINE_COMMAND, Config
 
 SAMPLES = {code: sentence for code, _, sentence in LANGUAGES if sentence}
 
@@ -224,8 +224,7 @@ class LocalTranscriber:
                 from faster_whisper import WhisperModel
             except ImportError as e:
                 raise TranscribeError(
-                    "local transcription is not installed. Reinstall with the `local` extra: "
-                    'uv tool install "hold-dictate[local]"',
+                    f"local transcription is not installed. Install it with: {OFFLINE_COMMAND}",
                     "Local transcription isn't installed. Pick another service in the settings.",
                 ) from e
             name = self.cfg.local_model

@@ -201,6 +201,8 @@ details .items { margin-top:var(--s-6); }
 .upd .note { display:flex; align-items:center; gap:var(--s-2); font-variant-numeric:tabular-nums; }
 .upd .note svg { width:15px; height:15px; flex:none; }
 .prog { display:block; height:4px; max-width:320px; border-radius:var(--r-pill); background:var(--line); overflow:hidden; }
+.setup .slot .offline { display:grid; gap:var(--s-3); justify-items:start; }
+.setup .slot .offline .prog { width:100%; }
 .prog i { display:block; height:100%; width:0; border-radius:inherit; background:var(--accent); transition:width .25s ease-out; }
 .gap-top { margin-top:var(--s-3); }
 .hist-tools { display:flex; flex-wrap:wrap; align-items:center; gap:var(--s-2) var(--s-3); }
@@ -460,7 +462,7 @@ class Stale extends Error {}
 async function api(path, body) {
   let res;
   try { res = await fetch(path, { method: body === undefined ? 'GET' : 'POST', headers: { 'X-Token': TOKEN, 'Content-Type': 'application/json' }, body: body === undefined ? undefined : JSON.stringify(body) }); }
-  catch { if (upd) throw new Error('restarting'); reachable = false; saveState('offline'); if (S) render(S); retry(); throw new Error("can't reach hold-dictate. Is it running?"); }
+  catch { if (upd || offline.run) throw new Error('restarting'); reachable = false; saveState('offline'); if (S) render(S); retry(); throw new Error("can't reach hold-dictate. Is it running?"); }
   if (!reachable) { reachable = true; saveState('idle'); }
   if (res.status === 403) { $('stale').hidden = false; saveState('failed', "Can't save"); throw new Stale('open the settings again'); }
   const data = await res.json().catch(() => ({ error: res.statusText }));
@@ -538,7 +540,9 @@ function blocker(s) {
     const text = first.replace(/^cannot read the keyboard\.\s*/i, '');
     return { title: keyboard ? 'hold-dictate can\'t read the keyboard yet.' : 'The shortcut can\'t work yet.', lede: text[0].toUpperCase() + text.slice(1) + (cmd && !text.endsWith(':') ? ' Run this in a terminal:' : ''), code: cmd || undefined };
   }
-  if (c.provider === 'local') return s.local_installed ? null : { title: 'Install the offline model to start.', lede: 'It runs on this computer without internet. Run this in a terminal, then reload this page:', code: 'uv tool install --force "hold-dictate[local]"' };
+  if (c.provider === 'local') return s.local_installed ? null : s.offline.can_install
+    ? { title: 'Install the offline engine to start.', lede: 'It runs on this computer without internet. Run this in a terminal, then reload this page:', code: s.offline.command }
+    : { title: 'Install the offline engine to start.', lede: 'It runs on this computer without internet. It is a large download, a few hundred MB, and hold-dictate restarts when it is done.', button: offline.box };
   if (c.provider === 'custom' && !c.base_url) return { title: 'Add your server\'s address to start.', lede: 'A custom service needs the address of any server that speaks the OpenAI transcription API.', move: 'customRows' };
   if (!s.key_hint && !s.key_from_env && !s.extension_transcribes) return { title: 'Paste an API key to start dictating.', lede: `hold-dictate sends what you say to a speech service, which turns it into text. You're set up for ${service}${c.provider === 'groq' ? ', which is free' : ''}. You can pick another service below.`, move: 'keyRows' };
   return null;
@@ -597,6 +601,7 @@ function render(s) {
   document.querySelectorAll('#swatches button').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.v === c.overlay_bars.toLowerCase())));
   $('overlay_size').value = c.overlay_size;
   renderUpdates(s);
+  renderOffline(s);
   $('local_fallback').checked = c.local_fallback;
   for (const id of ['prompt', 'base_url', 'model', 'post_hook']) if (document.activeElement !== $(id)) $(id).value = c[id];
   if (document.activeElement !== $('filler_words')) $('filler_words').value = c.filler_words || s.fillers_default.join(', '); // the built-in list, to edit
@@ -631,7 +636,7 @@ function renderService(s) {
   $('customRows').hidden = c.provider !== 'custom';
   $('localHelp').hidden = !local || !s.local_installed; // when it is missing, the hero shows the install command
   $('localHelp').innerHTML = '';
-  $('localHelp').append(s.local_installed ? 'Runs on this computer without internet. The first use downloads the model.' : 'The offline model needs one more install. In a terminal, run ', ...(s.local_installed ? [] : [Object.assign(document.createElement('code'), { textContent: 'uv tool install --force "hold-dictate[local]"' })]));
+  $('localHelp').append(s.local_installed ? 'Runs on this computer without internet. The first use downloads the model.' : 'The offline engine needs one more install. In a terminal, run ', ...(s.local_installed ? [] : [Object.assign(document.createElement('code'), { textContent: s.offline.command })]));
   $('saveKey').classList.toggle('primary', (blocker(s) || {}).move === 'keyRows');
   $('key').placeholder = s.key_hint ? `Saved key ${s.key_hint}` : s.key_from_env ? 'A key is set in an environment variable.' : 'Paste your key here';
   const help = $('keyHelp'); help.textContent = '';
@@ -990,6 +995,53 @@ $('installUpd').onclick = async () => {
   updNote = ''; const want = (S.update.latest || '').replace(/^v/, '');
   try { S = await api('/api/update/install', {}); upd = { want, from: S.version, shown: 0, gone: 0, started: Date.now() }; showUpd(`Downloading version ${want}… 0%`, 0); followUpd(); }
   catch (e) { $('updMsg').className = 'note bad'; $('updMsg').textContent = e.message; }
+};
+// ---- the offline engine: installed like an update (the latest version again, with it), then hold-dictate restarts ----
+const offline = { box: document.createElement('div'), run: null }; // run: { shown, gone, started } while an install this page started goes on
+offline.box.className = 'offline';
+offline.box.innerHTML = '<button class="btn primary" type="button">Install the offline engine</button><span class="prog" hidden><i></i></span><p class="note"></p>';
+function showOffline(text, pct, kind) {
+  const [btn, bar, msg] = offline.box.children;
+  msg.className = 'note ' + (kind || 'wait'); msg.textContent = text;
+  bar.hidden = pct == null; if (pct != null) bar.firstChild.style.width = pct + '%';
+  btn.hidden = !!offline.run;
+}
+function renderOffline(s) {
+  if (offline.run) return; // followOffline draws it
+  const st = s.offline.status || '';
+  const failed = /^(offline install failed|an update)/.test(st);
+  showOffline(failed ? `It didn't install: ${st.replace(/^offline install failed: (error: )?/, '')}` : '', null, failed ? 'bad' : '');
+}
+async function followOffline() {
+  let s;
+  try { s = await api('/api/state'); }
+  catch { // restarting with the engine; after two minutes, say it didn't come back
+    if (!offline.run) return;
+    offline.run.gone = offline.run.gone || Date.now();
+    if (Date.now() - offline.run.gone < 120000) { showOffline('Restarting hold-dictate…', 100); setTimeout(followOffline, 500); return; }
+    offline.run = null; showOffline(`hold-dictate didn't come back. Start it again ${where(S)}.`, null, 'bad');
+    reachable = false; saveState('offline'); retry();
+    return;
+  }
+  S = s;
+  const o = s.offline;
+  if (s.local_installed && !o.ready) { offline.run = null; render(s); return; } // back after the restart: the hero gives way to the shortcut
+  if (offline.run.gone || (o.progress == null && !o.ready && (/^(offline install failed|an update|cannot)/.test(o.status) || Date.now() - offline.run.started > 15000 && !o.status.startsWith('checking')))) {
+    offline.run = null; render(s); // failed, or it came back without the engine: the server's words
+    if (!s.offline.status) showOffline("It didn't install. Try again, or run " + o.command + ' in a terminal.', null, 'bad');
+    return;
+  }
+  const goal = o.ready ? 100 : (o.progress || 0); // the same creep as an update between uv's stages
+  const aim = o.ready ? 100 : Math.min(Math.max(goal, offline.run.shown + 0.4), goal + 12, 99);
+  offline.run.shown = Math.max(offline.run.shown, offline.run.shown + (aim - offline.run.shown) * 0.3);
+  showOffline(o.ready ? 'Restarting hold-dictate…' : `Installing the offline engine… ${Math.round(offline.run.shown)}%`, offline.run.shown);
+  setTimeout(followOffline, 300);
+}
+offline.box.firstChild.onclick = async () => {
+  offline.run = { shown: 0, gone: 0, started: Date.now() };
+  showOffline('Installing the offline engine… 0%', 0);
+  try { S = await api('/api/offline/install', {}); followOffline(); }
+  catch (e) { offline.run = null; showOffline(e.message, null, 'bad'); }
 };
 $('startSvc').onclick = async () => {
   $('startSvc').disabled = true;

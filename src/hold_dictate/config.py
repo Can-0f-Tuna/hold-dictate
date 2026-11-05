@@ -112,6 +112,9 @@ PROVIDERS = {
 
 
 # Models for provider = "local" (faster-whisper). The first one is what Automatic uses.
+# Installs the offline engine (faster-whisper) into this copy; the settings page has a button that runs the same.
+OFFLINE_COMMAND = "hold-dictate offline"
+
 LOCAL_MODELS = [
     ["small", "Good balance of speed and accuracy (about 500 MB)"],
     ["large-v3-turbo", "More accurate, slower on most computers (about 1.6 GB)"],
