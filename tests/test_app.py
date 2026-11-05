@@ -478,3 +478,13 @@ def test_on_the_local_model_a_phrase_goes_out_only_once_it_ends_in_a_pause():
     assert typed == ["one two three"] and len(sent) == 1 and live.start_at == len(paused)
     more = np.concatenate([paused, TONE])
     assert live.finish(more, lambda s: "four") == "one two three four"
+
+
+def test_a_press_after_the_local_model_was_freed_loads_it_while_you_speak(monkeypatch):
+    from hold_dictate.providers import LocalTranscriber
+    loads = []
+    monkeypatch.setattr(LocalTranscriber, "preload", lambda self: loads.append(1))
+    d = Dictation(Config(provider="local", min_hold=9), FakeFeedback(), recorder_factory=FakeRecorder)
+    d.begin()
+    assert loads == [1]
+    d.finish()

@@ -126,6 +126,8 @@ class Dictation:
                 self.on_no_key()
             return
         self._cut_tail()
+        if self.cfg.provider == "local" and self.local.model is None:
+            self.local.preload()  # freed while idle: it loads while you speak
         self.voice = audio.VoiceMeter()
         try:
             self.recorder = self.recorder_factory(self._level)
@@ -391,6 +393,8 @@ def run(cfg: Config) -> int:
     updater.announce = not feedback.events  # the pill ticks instead
 
     def on_saved(new_cfg: Config):
+        if new_cfg.provider == "local" and dictation.local.loaded != new_cfg.local_model:
+            dictation.local.preload()
         new_hotkey = parse_hotkey(new_cfg.hotkey)
         server.hotkey_problem = ""  # a saved shortcut is always a valid one
         if str(new_hotkey) != str(detector.hotkey) and (detector.set_hotkey(new_hotkey) or dictation.latched):
@@ -403,6 +407,8 @@ def run(cfg: Config) -> int:
     server.problem, server.hotkey_problem = problem, hotkey_problem
     dictation.on_no_key = server.open
     extensions.started(dictation, server, detector)
+    if cfg.provider == "local":
+        dictation.local.preload()  # after the extensions, which may pick the model; the first dictation shouldn't wait
 
     def tick():
         dictation.tick()
