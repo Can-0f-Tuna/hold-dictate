@@ -463,3 +463,18 @@ def test_the_start_cue_waits_for_the_mic(monkeypatch):
     d.recorder.live.set()
     time.sleep(0.2)
     assert fb.log.count("recording") == 1
+
+
+def test_on_the_local_model_a_phrase_goes_out_only_once_it_ends_in_a_pause():
+    """A pass mid-phrase would be done again at the end; at a pause the text is final and only the rest is left."""
+    talking = np.concatenate([TONE, TONE])
+    paused = np.concatenate([talking, QUIET])
+    sent = []
+    live, typed = typer(Clips(talking, talking, paused), iter(["one two three"]), at_pauses=True)
+    live.transcribe = lambda s: sent.append(len(s)) or "one two three"
+    live.start()
+    wait_for(lambda: typed)
+    live.stop()
+    assert typed == ["one two three"] and len(sent) == 1 and live.start_at == len(paused)
+    more = np.concatenate([paused, TONE])
+    assert live.finish(more, lambda s: "four") == "one two three four"
