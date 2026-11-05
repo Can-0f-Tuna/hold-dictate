@@ -27,6 +27,11 @@ class Item:
     def setData_forType_(self, data, kind):
         self.kinds[kind] = data
 
+    setString_forType_ = setData_forType_
+
+    def setDataProvider_forTypes_(self, provider, kinds):
+        self.provider = provider
+
 
 class Board:
     def __init__(self, items):
@@ -50,6 +55,7 @@ class Board:
 
 @pytest.fixture
 def board(monkeypatch):
+    monkeypatch.setattr(macos.time, "sleep", lambda s: None)
     board = Board([Item({"public.png": b"\x89PNG", "public.rtf": b"{\\rtf1}"}), Item({"public.utf8-plain-text": b"two"})])
     appkit = types.SimpleNamespace(NSPasteboard=types.SimpleNamespace(generalPasteboard=lambda: board),
                                    NSPasteboardItem=Item, NSPasteboardTypeString="public.utf8-plain-text")
@@ -60,7 +66,7 @@ def board(monkeypatch):
 def test_the_clipboard_comes_back_whole_images_and_rich_text_too(board):
     clip = macos.Clipboard()
     clip.put("dictated")
-    assert [i.kinds for i in board.items] == [{"public.utf8-plain-text": "dictated"}]
+    assert [i.kinds for i in board.items] == [{"public.utf8-plain-text": "dictated", macos.TRANSIENT: b""}]
     clip.restore()
     assert [i.kinds for i in board.items] == [{"public.png": b"\x89PNG", "public.rtf": b"{\\rtf1}"}, {"public.utf8-plain-text": b"two"}]
 
@@ -72,3 +78,22 @@ def test_something_copied_meanwhile_is_not_overwritten(board):
     board.setString_forType_("copied by hand", "public.utf8-plain-text")
     clip.restore()
     assert [i.kinds for i in board.items] == [{"public.utf8-plain-text": "copied by hand"}]
+
+
+def test_the_old_clipboard_comes_back_only_once_the_app_has_read_the_text(board, monkeypatch):
+    import threading
+    monkeypatch.setattr(macos, "main_loop_running", lambda: True)
+    monkeypatch.setattr(macos, "_provider", lambda text, read: types.SimpleNamespace(text=text, read=read))
+    clip = macos.Clipboard()
+    clip.put("dictated")
+    promised = board.items[0]
+    assert "public.utf8-plain-text" not in promised.kinds  # only promised
+    assert clip.wait_read(0.01) is False  # nobody pasted
+
+    def app_reads():  # what the pasteboard does when the app asks: the provider fills the item in
+        promised.setString_forType_(promised.provider.text, "public.utf8-plain-text")
+        promised.provider.read.set()
+    threading.Timer(0.05, app_reads).start()
+    assert clip.wait_read(2) is True and promised.kinds["public.utf8-plain-text"] == "dictated"
+    clip.restore()
+    assert board.items[1].kinds == {"public.utf8-plain-text": b"two"}

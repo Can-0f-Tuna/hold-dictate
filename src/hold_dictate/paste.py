@@ -204,7 +204,9 @@ def _mac(text: str, shift: bool, submit: bool) -> str:
         _pynput_paste(shift)
     except Exception as e:
         return f"text copied to the clipboard; press Cmd+V ({e})"
-    time.sleep(0.3)
+    # A fixed 0.3 s put the old clipboard back before a busy app had read the new one, which then pasted the
+    # old text, or nothing: the old contents weren't text.
+    board.wait_read()
     if submit:
         _pynput_enter()
     board.restore()

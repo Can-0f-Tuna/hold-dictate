@@ -5,6 +5,7 @@ import subprocess
 import sys
 import tempfile
 import threading
+import time
 from collections import deque
 
 TERMINALS = {"Apple_Terminal": "Terminal", "iTerm.app": "iTerm", "vscode": "Visual Studio Code", "WarpTerminal": "Warp"}
@@ -92,6 +93,45 @@ def play_sound(samples):
         os.unlink(f.name)
 
 
+TRANSIENT = "org.nspasteboard.TransientType"  # nspasteboard.org: don't keep this in a clipboard history
+READ_WAIT = 2.0  # an app that hasn't read the paste by then never will: no text field had the focus
+AFTER_READ = 0.15
+PLAIN_WAIT = 0.5
+
+
+def main_loop_running() -> bool:
+    """Whether the main thread is in its run loop, which is where the pasteboard asks for promised data."""
+    try:
+        import CoreFoundation as cf
+        return cf.CFRunLoopCopyCurrentMode(cf.CFRunLoopGetMain()) is not None
+    except Exception:
+        return False
+
+
+_provider_class = None
+
+
+def _provider(text: str, read: threading.Event):
+    """An NSPasteboardItemDataProvider that hands over `text` and sets `read` when an app asks for it."""
+    global _provider_class
+    if _provider_class is None:
+        import objc
+        from Foundation import NSObject
+
+        class HoldDictatePasteProvider(NSObject, protocols=[objc.protocolNamed("NSPasteboardItemDataProvider")]):
+            def pasteboard_item_provideDataForType_(self, board, item, kind):
+                item.setString_forType_(self.text, kind)
+                self.read.set()
+
+            def pasteboardFinishedWithDataProvider_(self, board):
+                pass
+
+        _provider_class = HoldDictatePasteProvider
+    provider = _provider_class.alloc().init()
+    provider.text, provider.read = text, read
+    return provider
+
+
 class Clipboard:
     """The pasteboard for one paste: it keeps every item and type that was there (images, rich text, files, not
     only the plain text pbcopy knows), puts the text up, and puts the old contents back."""
@@ -111,10 +151,38 @@ class Clipboard:
         self.ours = None  # the board's change count once the text is up
 
     def put(self, text: str):
-        from AppKit import NSPasteboardTypeString
+        """With AppKit's main loop running (the menu-bar icon runs it), the text is only promised: the board asks
+        us for it when an app reads it, which tells wait_read() the paste is done. Without that loop no one would
+        answer, so the text goes up as it is."""
+        from AppKit import NSPasteboardItem, NSPasteboardTypeString
+        self.read = threading.Event()
         self.board.clearContents()
-        self.board.setString_forType_(text, NSPasteboardTypeString)
+        try:
+            self.board.prepareForNewContentsWithOptions_(1)  # NSPasteboardContentsCurrentHostOnly: not to other devices
+        except Exception:
+            pass
+        provider = _provider(text, self.read) if main_loop_running() else None
+        item = NSPasteboardItem.alloc().init()
+        if provider is None:
+            item.setString_forType_(text, NSPasteboardTypeString)
+        else:
+            item.setDataProvider_forTypes_(provider, [NSPasteboardTypeString])
+            self.provider = provider  # kept alive until the board is done with it
+        item.setData_forType_(b"", TRANSIENT)  # clipboard managers leave it out of their history
+        self.board.writeObjects_([item])
         self.ours = self.board.changeCount()
+        self.promised = provider is not None
+
+    def wait_read(self, longest: float = READ_WAIT) -> bool:
+        """Waits until an app has read the text, up to `longest`. True if it was read. A plain put can't tell
+        when that happens, so it waits PLAIN_WAIT, the old fixed time."""
+        if not self.promised:
+            time.sleep(PLAIN_WAIT)
+            return False
+        if not self.read.wait(longest):
+            return False
+        time.sleep(AFTER_READ)  # an app that reads twice gets the board's copy the second time
+        return True
 
     def restore(self):
         """Unless something else was copied in the meantime: that is newer than what we kept."""
