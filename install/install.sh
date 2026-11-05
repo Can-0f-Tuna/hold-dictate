@@ -41,15 +41,18 @@ if [ "$(uname -s)" = "Linux" ] && [ -z "${HOLD_DICTATE_SKIP_SYSTEM:-}" ]; then
   fi
 fi
 
-# 3. The tool itself: the latest release, or the main branch if there is none yet.
+# 3. The tool itself: the latest release, or the main branch if there is none yet. An archive, so no git is needed.
+# Python 3.13 is the newest one the offline engine's libraries have wheels for everywhere (see updater.py).
+tag=""
 if [ -n "${HOLD_DICTATE_SOURCE:-}" ]; then
   source="$HOLD_DICTATE_SOURCE"
 else
   tag=$(curl -fsSL "https://api.github.com/repos/$REPO/releases/latest" 2>/dev/null | sed -n 's/.*"tag_name": *"\([^"]*\)".*/\1/p' | head -n 1)
-  source="git+https://github.com/$REPO${tag:+@$tag}"
+  if [ -n "$tag" ]; then ref="tags/$tag"; else ref="heads/main"; fi
+  source="hold-dictate @ https://github.com/$REPO/archive/refs/$ref.tar.gz"
 fi
-say "Installing hold-dictate ${tag:-}"
-uv tool install --force "$source"
+say "Installing hold-dictate $tag"
+uv tool install --force --python "${HOLD_DICTATE_PYTHON:-3.13}" "$source"
 
 # 4. Start now and at every login, then open the settings page for the API key.
 say "Starting hold-dictate"

@@ -22,7 +22,7 @@ The script installs [uv](https://docs.astral.sh/uv/), the system helpers it need
 
 With an AI coding agent (Claude Code, Codex, Cursor, ...): paste the prompt from [install/agent.md](install/agent.md), also at <https://hold-dictate.vercel.app/agent.md>. The agent installs it, walks you through the key, runs the checks and opens a GitHub issue for anything it can't fix.
 
-Manual install: `uv tool install git+https://github.com/Can-0f-Tuna/hold-dictate`, then `hold-dictate service install` and `hold-dictate settings`.
+Manual install: `uv tool install --python 3.13 git+https://github.com/Can-0f-Tuna/hold-dictate`, then `hold-dictate service install` and `hold-dictate settings`.
 
 ## Settings
 
@@ -68,7 +68,7 @@ The Release workflow runs the tests and publishes the GitHub release, not yet ma
 | **Groq** (recommended) | free tier | Whisper large-v3, about 1 s. Key: <https://console.groq.com/keys> |
 | OpenAI | paid | Key: <https://platform.openai.com/api-keys> |
 | Custom | varies | Any server with an OpenAI-style `/audio/transcriptions` endpoint |
-| Local | free | Offline via faster-whisper. Install with `uv tool install "hold-dictate[local]"` |
+| Local | free | Offline via faster-whisper. Install with `hold-dictate offline`, or the button on the settings page |
 
 Getting a Groq key: open the link above, sign in, click **Create API Key**, copy it and paste it into the settings page. The key is stored in your user config file (permissions 600 on Linux and macOS). It leaves your computer only in requests to the provider. Free-tier limits change; see Groq's rate-limit page.
 

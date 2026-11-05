@@ -9,15 +9,17 @@ if (-not (Get-Command uv -ErrorAction SilentlyContinue)) {
     $env:Path = "$env:USERPROFILE\.local\bin;$env:USERPROFILE\.cargo\bin;$env:Path"
 }
 
+# The latest release, or the main branch if there is none yet. An archive, so no git is needed.
+# Python 3.13 is the newest one the offline engine's libraries have wheels for everywhere (see updater.py).
+$Tag = ""
 if ($env:HOLD_DICTATE_SOURCE) {
     $Source = $env:HOLD_DICTATE_SOURCE
 } else {
-    $Source = "git+https://github.com/$Repo"
-    try {
-        $Tag = (Invoke-RestMethod "https://api.github.com/repos/$Repo/releases/latest").tag_name
-        if ($Tag) { $Source = "$Source@$Tag" }
-    } catch { }
+    try { $Tag = (Invoke-RestMethod "https://api.github.com/repos/$Repo/releases/latest").tag_name } catch { }
+    $Ref = if ($Tag) { "tags/$Tag" } else { "heads/main" }
+    $Source = "hold-dictate @ https://github.com/$Repo/archive/refs/$Ref.tar.gz"
 }
+$Python = if ($env:HOLD_DICTATE_PYTHON) { $env:HOLD_DICTATE_PYTHON } else { "3.13" }
 
 # A running copy locks its files; stop it before reinstalling.
 Get-CimInstance Win32_Process -Filter "Name = 'pythonw.exe' OR Name = 'python.exe'" |
@@ -25,7 +27,7 @@ Get-CimInstance Win32_Process -Filter "Name = 'pythonw.exe' OR Name = 'python.ex
     ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }
 
 Write-Host "==> Installing hold-dictate $Tag"
-uv tool install --force $Source
+uv tool install --force --python $Python $Source
 if ($LASTEXITCODE -ne 0) { throw "install failed" }
 
 Write-Host "==> Starting hold-dictate (it also starts at every login; look for its icon next to the clock)"
