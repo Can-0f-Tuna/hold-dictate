@@ -58,7 +58,7 @@ def test_a_check_that_cannot_run_says_so(server, monkeypatch):  # noqa: F811
 def mac(monkeypatch):
     def setup(access):
         monkeypatch.setattr(health.sys, "platform", "darwin")
-        monkeypatch.setattr("hold_dictate.hotkey.choose_backend", lambda: (type("B", (), {"name": "pynput"})(), ""))
+        monkeypatch.setattr("hold_dictate.hotkey.choose_backend", lambda quick=False: (type("B", (), {"name": "pynput"})(), ""))
         monkeypatch.setattr(health, "mac_access", lambda: access)
         monkeypatch.setattr(health, "_app_rows", lambda: None)
         monkeypatch.setattr("hold_dictate.macos.grantee", lambda: ("python3.12", "/opt/py/bin/python3.12"))
@@ -88,7 +88,7 @@ def test_doctor_in_a_terminal_asks_the_running_app_for_its_permissions(server, m
     """In Terminal macOS answers for Terminal; the running app knows its own."""
     import types
     monkeypatch.setattr(health.sys, "platform", "darwin")
-    monkeypatch.setattr("hold_dictate.hotkey.choose_backend", lambda: (type("B", (), {"name": "pynput"})(), ""))
+    monkeypatch.setattr("hold_dictate.hotkey.choose_backend", lambda quick=False: (type("B", (), {"name": "pynput"})(), ""))
     monkeypatch.setattr(health, "mac_access", lambda: {"Accessibility": False, "Microphone": False})  # the terminal's
     app_rows = [{"ok": True, "text": "macOS Accessibility permission for python3.12", "fix": ""},
                 {"ok": True, "text": "microphone found", "fix": ""}]

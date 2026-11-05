@@ -97,7 +97,7 @@ def checks(cfg, online: bool = True) -> list:
         line(True, f"hotkey {cfg.hotkey}")
     except ValueError as e:
         line(False, f"hotkey: {e}", "Choose a new shortcut at the top of the settings page, or fix `hotkey` in the config file.")
-    backend, problem = choose_backend()
+    backend, problem = choose_backend(quick=True)
     line(backend is not None, f"keyboard access ({backend.name if backend else 'none'})", problem)
     if sys.platform == "darwin":
         _mac_rows(line)

@@ -1,4 +1,5 @@
 """Speech-to-text backends: any OpenAI-compatible HTTP API, or faster-whisper on this machine."""
+import importlib.util
 import json
 import os
 import sys
@@ -195,10 +196,11 @@ class LocalTranscriber:
 
     @staticmethod
     def available() -> bool:
+        """Looks without importing: faster-whisper brings CTranslate2 and PyAV, and the first import after an install
+        took two minutes on a Mac (macOS checks every new library), longer than the settings page waits for doctor."""
         try:
-            import faster_whisper  # noqa: F401
-            return True
-        except ImportError:
+            return "faster_whisper" in sys.modules or importlib.util.find_spec("faster_whisper") is not None
+        except (ImportError, ValueError):
             return False
 
     def load(self):

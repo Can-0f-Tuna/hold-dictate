@@ -216,7 +216,11 @@ class PynputBackend:
     name = "pynput"
     on_problem = None  # macOS: called with what to turn on while the keyboard can't be read, and '' once it can
 
-    def usable(self) -> bool:
+    def usable(self, quick: bool = False) -> bool:
+        """quick: only look for pynput. Importing it loads Quartz on macOS, a second warm and far more cold."""
+        if quick:
+            import importlib.util
+            return importlib.util.find_spec("pynput") is not None
         try:
             import pynput.keyboard  # noqa: F401
             return True
@@ -358,20 +362,20 @@ def _mac_check_tap(listener):
         pass
 
 
-def choose_backend():
-    """Returns (backend or None, problem text)."""
+def choose_backend(quick: bool = False):
+    """Returns (backend or None, problem text). quick, for doctor: pynput is looked for, not imported."""
     if sys.platform.startswith("linux"):
         evdev = EvdevBackend()
         if evdev.usable():
             return evdev, ""
         pynput_ok = bool(os.environ.get("DISPLAY")) and not os.environ.get("WAYLAND_DISPLAY")
-        if pynput_ok and PynputBackend().usable():
+        if pynput_ok and PynputBackend().usable(quick):
             return PynputBackend(), ""
         return None, (
             "cannot read the keyboard. Add your user to the 'input' group, then log out and back in:\n"
             "    sudo usermod -aG input $USER"
         )
     backend = PynputBackend()
-    if backend.usable():
+    if backend.usable(quick):
         return backend, ""
     return None, "the 'pynput' package is not available"
