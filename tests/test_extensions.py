@@ -146,6 +146,60 @@ def test_the_second_hotkey_hands_its_recording_to_the_extension(api, add):
     assert d.recorder is None
 
 
+class Cloud:
+    """Transcribes in place of the service in the settings, with what each call answers in turn."""
+
+    def __init__(self, *answers):
+        self.answers, self.calls = list(answers), []
+
+    def transcribe(self, cfg, speech, force, prompt, live):
+        self.calls.append((len(speech) > 0, force, prompt, live))
+        answer = self.answers.pop(0)
+        if isinstance(answer, Exception):
+            raise answer
+        return answer
+
+    def transcribes(self, cfg):
+        return True
+
+
+def test_an_extension_can_transcribe_the_final_text_and_the_live_passes(api, add):
+    cloud = Cloud("from the extension", "live words")
+    add(cloud)
+    d, out, _ = dictation(cfg_for(api, languages="he", prompt="Kubernetes"))
+    tap(d, 0.3)
+    settle(d)
+    assert [c["text"] for c in out.calls] == ["from the extension"] and api.requests == []
+    assert d._transcribe_live(FakeRecorder(None).stop()) == "live words"
+    force, prompt = cloud.calls[0][1:3]
+    assert force == "he" and "Kubernetes" in prompt  # the hints the service would have had
+    assert [c[3] for c in cloud.calls] == [False, True]
+
+
+@pytest.mark.parametrize("answer", [None, RuntimeError("down")])
+def test_the_service_in_the_settings_takes_what_an_extension_leaves_or_fails(api, add, capsys, answer):
+    add(Cloud(answer, answer))
+    api.text = "from the service"
+    d, out, fb = dictation(cfg_for(api))
+    tap(d, 0.3)
+    settle(d)
+    assert [c["text"] for c in out.calls] == ["from the service"] and len(api.requests) == 1
+    assert ("error", "down") not in fb.log
+    assert d._transcribe_live(FakeRecorder(None).stop()) == "from the service"
+    assert ("an extension failed in transcribe" in capsys.readouterr().err) == (answer is not None)
+
+
+def test_an_extension_that_transcribes_needs_no_api_key(api, add):
+    d, _, fb = dictation(cfg_for(api, api_key=""))
+    d.on_action("start")
+    assert d.recorder is None and fb.log and fb.log[0][0] == "error"
+    add(Cloud("text"))
+    d.on_action("start")
+    assert d.recorder is not None
+    d.finish()
+    settle(d)
+
+
 def test_text_hooks_change_the_prompt_and_the_words(add):
     from hold_dictate.providers import language_hints
 

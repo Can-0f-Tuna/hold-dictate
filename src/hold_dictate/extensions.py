@@ -13,6 +13,14 @@ Dictating:
   after_dictation(dictation, audio, raw, cleaned, final, app)
                                               once the text went out, also when the app's rule is to do nothing. Not
                                               after a text hook drops it. Typed live, raw and cleaned are `final` too
+Transcribing:
+  transcribe(cfg, speech, force, prompt, live) -> str | None
+                                              the text of `speech` (16 kHz float32 samples), in place of the
+                                              service in the settings; None leaves it to that service. `force`
+                                              (a language code or '') and `prompt` come from the languages you
+                                              picked; `live` is a pass of live typing. A failure is logged and
+                                              the service in the settings takes the clip
+  transcribes(cfg) -> bool                    True when transcribe() takes dictations now, so no API key is needed
 Text:
   adjust_prompt(prompt, cfg) -> str           the spelling hint sent to the transcriber
   adjust_words(overrides, cfg) -> dict        the word replacements used in clean-up
@@ -128,6 +136,24 @@ def rewriter(dictation):
 
 def after_dictation(dictation, audio, raw: str, cleaned: str, final: str, app: str):
     _all("after_dictation", dictation, audio, raw, cleaned, final, app)
+
+
+def transcribe(cfg, speech, hints, live: bool = False):
+    """The text from the first extension that takes the clip, or None for the service in the settings.
+    `hints(cfg)` gives (force, prompt), asked only when an extension transcribes."""
+    hooks = _hooks("transcribe")
+    if not hooks:
+        return None
+    force, prompt = hints(cfg)
+    for hook in hooks:
+        text = _call(hook, cfg, speech, force, prompt, live)
+        if isinstance(text, str):
+            return text
+    return None
+
+
+def transcribes(cfg) -> bool:
+    return any(result is True for result in _all("transcribes", cfg))
 
 
 def adjust_prompt(prompt: str, cfg) -> str:

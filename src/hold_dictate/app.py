@@ -10,11 +10,15 @@ from .config import Config
 from .feedback import Feedback
 from .hotkey import HoldDetector, choose_backend, parse_hotkey
 from .live import LiveTyper
-from .providers import LocalTranscriber, TranscribeError, transcribe_api
+from .providers import LocalTranscriber, TranscribeError, language_hints, transcribe_api
 
 
 def transcribe(cfg: Config, local: LocalTranscriber, speech) -> tuple[str, str]:
-    """Returns (text, source). Cloud first; the local model takes over if the cloud fails and it is installed."""
+    """Returns (text, source). An extension first, if one takes it; then the service in the settings, and the
+    local model takes over if the cloud fails and it is installed."""
+    text = extensions.transcribe(cfg, speech, language_hints)
+    if text is not None:
+        return text, "extension"
     if cfg.provider == "local":
         return local.transcribe(speech), "local"
     try:
@@ -120,7 +124,7 @@ class Dictation:
             if self.on_no_key:
                 self.on_no_key()
             return
-        if self.cfg.provider != "local" and not self.cfg.effective_key():
+        if self.cfg.provider != "local" and not self.cfg.effective_key() and not extensions.transcribes(self.cfg):
             self.fb.error("no API key yet. Add one in the settings.")
             if self.on_no_key:
                 self.on_no_key()
@@ -140,7 +144,7 @@ class Dictation:
             app = self.live_app  # the next recording has its own
             self.live = LiveTyper(self.recorder, self._transcribe_live, lambda raw: textproc.clean(raw, self.cfg), lambda text: self._type_live(text, app),
                                   ready=lambda: sys.platform.startswith("linux") or self.latched,
-                                  **({"gap": 1.0, "per_minute": 0} if self.cfg.provider == "local" else {}))
+                                  **({"gap": 1.0, "per_minute": 0} if self.cfg.provider == "local" and not extensions.transcribes(self.cfg) else {}))
             self.live.start()
         if self.cfg.hotkey_mode != "hold" and self.cfg.silence_stop > 0:
             threading.Thread(target=self._watch_silence, args=(self.recorder,), daemon=True).start()
@@ -222,6 +226,9 @@ class Dictation:
 
     def _transcribe_live(self, speech) -> str:
         """No fallback here: if a request fails, typing waits for the last pass, which has it."""
+        text = extensions.transcribe(self.cfg, speech, language_hints, live=True)
+        if text is not None:
+            return text
         return self.local.transcribe(speech) if self.cfg.provider == "local" else transcribe_api(self.cfg, speech)
 
     def _types_live(self) -> bool:

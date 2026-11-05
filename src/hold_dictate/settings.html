@@ -540,7 +540,7 @@ function blocker(s) {
   }
   if (c.provider === 'local') return s.local_installed ? null : { title: 'Install the offline model to start.', lede: 'It runs on this computer without internet. Run this in a terminal, then reload this page:', code: 'uv tool install --force "hold-dictate[local]"' };
   if (c.provider === 'custom' && !c.base_url) return { title: 'Add your server\'s address to start.', lede: 'A custom service needs the address of any server that speaks the OpenAI transcription API.', move: 'customRows' };
-  if (!s.key_hint && !s.key_from_env) return { title: 'Paste an API key to start dictating.', lede: `hold-dictate sends what you say to a speech service, which turns it into text. You're set up for ${service}${c.provider === 'groq' ? ', which is free' : ''}. You can pick another service below.`, move: 'keyRows' };
+  if (!s.key_hint && !s.key_from_env && !s.extension_transcribes) return { title: 'Paste an API key to start dictating.', lede: `hold-dictate sends what you say to a speech service, which turns it into text. You're set up for ${service}${c.provider === 'groq' ? ', which is free' : ''}. You can pick another service below.`, move: 'keyRows' };
   return null;
 }
 
