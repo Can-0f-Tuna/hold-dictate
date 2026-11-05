@@ -11,6 +11,10 @@ TERMINALS = ("alacritty", "konsole", "kitty", "foot", "ghostty", "wezterm", "pty
 
 
 def _run(cmd, **kw):
+    if sys.platform == "darwin":
+        from .macos import spawn_options
+        cmd, extra = spawn_options(cmd)
+        kw = {**extra, **kw}
     return subprocess.run(cmd, capture_output=True, timeout=kw.pop("timeout", 2), **kw)
 
 

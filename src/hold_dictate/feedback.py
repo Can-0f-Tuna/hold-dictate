@@ -158,7 +158,8 @@ class Feedback:
         try:
             if sys.platform == "darwin":
                 safe = message.replace('"', "'")
-                subprocess.run(["osascript", "-e", f'display notification "{safe}" with title "hold-dictate"'], timeout=3)
+                subprocess.run(["/usr/bin/osascript", "-e", f'display notification "{safe}" with title "hold-dictate"'], timeout=3,
+                               close_fds=False)  # posix_spawn, not fork (see macos.spawn_options)
             elif sys.platform.startswith("linux") and shutil.which("notify-send"):
                 subprocess.run(["notify-send", "hold-dictate", message], timeout=3)
         except Exception:

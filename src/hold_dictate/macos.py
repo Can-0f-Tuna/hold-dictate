@@ -11,6 +11,14 @@ from collections import deque
 TERMINALS = {"Apple_Terminal": "Terminal", "iTerm.app": "iTerm", "vscode": "Visual Studio Code", "WarpTerminal": "Warp"}
 
 
+def spawn_options(cmd: list) -> tuple[list, dict]:
+    """Starts helpers with posix_spawn instead of fork: Python spawns when the program has a full path and
+    close_fds is off. A fork right after the local model ran made its OpenMP runtime warn \"Forking a process
+    while a parallel region is active\". Python's own descriptors aren't inherited either way (PEP 446)."""
+    from shutil import which
+    return [which(cmd[0]) or cmd[0], *cmd[1:]], {"close_fds": False}
+
+
 def microphone_status():
     """True, False, or None when macOS hasn't asked yet."""
     from .health import _mac_microphone

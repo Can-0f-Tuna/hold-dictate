@@ -130,6 +130,8 @@ def report() -> dict:
     """The offline checks, in a process of their own: PortAudio only finds a new microphone when it starts, and
     restarting it inside the app would end a recording."""
     flags = {"creationflags": subprocess.CREATE_NO_WINDOW} if sys.platform == "win32" else {}
+    if sys.platform == "darwin":
+        flags["close_fds"] = False  # posix_spawn, not fork (see macos.spawn_options)
     try:
         run = subprocess.run([sys.executable, "-m", "hold_dictate", "doctor", "--offline", "--json"], stdin=subprocess.DEVNULL,
                              capture_output=True, text=True, timeout=20, env=dict(os.environ, **{CHILD: "1"}), **flags)
