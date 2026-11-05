@@ -7,7 +7,7 @@ import time
 import urllib.request
 
 from . import __version__, config as cfgmod, extensions, service
-from .config import PROVIDERS, Config
+from .config import OFFLINE_COMMAND, PROVIDERS, Config
 
 REPO = "https://github.com/Can-0f-Tuna/hold-dictate"
 
@@ -42,7 +42,7 @@ def cmd_setup(args) -> int:
 
     if choice == "local":
         if importlib.util.find_spec("faster_whisper") is None:
-            print('\nLocal mode needs an extra install. Run:\n    uv tool install --force "hold-dictate[local]"\nthen run `hold-dictate setup` again.')
+            print(f"\nLocal mode needs the offline engine. Run:\n    {OFFLINE_COMMAND}\nthen run `hold-dictate setup` again.")
             return 1
         cfg.local_model = ask("Model (tiny, base, small, medium, large-v3-turbo, or a Hugging Face repo)", cfg.local_model)
     else:
@@ -191,14 +191,14 @@ def cmd_settings(args, anchor: str = "", alongside=None) -> int:
     return 0
 
 
-def _daemon(path: str) -> dict | None:
-    """POSTs to the running hold-dictate's local API. None when it is not running."""
+def _daemon(path: str, get: bool = False) -> dict | None:
+    """POSTs to (or GETs from) the running hold-dictate's local API. None when it is not running."""
     from .settings_ui import running_url, runtime_file
     if not running_url():
         return None
     info = json.loads(runtime_file().read_text(encoding="utf-8"))
     request = urllib.request.Request(
-        f"http://127.0.0.1:{info['port']}{path}", data=b"{}", method="POST",
+        f"http://127.0.0.1:{info['port']}{path}", data=None if get else b"{}", method="GET" if get else "POST",
         headers={"X-Token": info["token"], "Content-Type": "application/json"},
     )
     with urllib.request.urlopen(request, timeout=10) as response:
@@ -220,6 +220,79 @@ def cmd_update(_args) -> int:
         return 1
     print(f"Installing {state['update']['latest'] or 'the latest version'}; hold-dictate restarts when it is done.")
     return 0
+
+
+def cmd_offline(_args) -> int:
+    """Installs the offline engine the way an update installs: the latest release again, with the `local` extra,
+    on the Python this copy runs on. A running hold-dictate does it and restarts; else this command does."""
+    if importlib.util.find_spec("faster_whisper"):
+        print("The offline engine is already installed. Choose Offline in the settings to use it.")
+        return 0
+    try:
+        state = _daemon("/api/offline/install")
+    except OSError:
+        state = None
+    if state is not None:
+        return _follow_offline(state)
+    from .updater import Updater
+    updater = Updater(cfgmod.load())
+    problem = updater.can_update()
+    if problem:
+        print(f"This copy can't install it by itself: {problem}.\n"
+              f"Install faster-whisper into the Python that runs it:\n    {sys.executable} -m pip install 'faster-whisper>=1.0'")
+        return 1
+    print("Installing the offline engine. It is a large download, so it takes a few minutes.")
+    updater.echo = True
+    if not updater.install_offline():
+        print(f"\n{updater.offline_status or 'It did not install.'}")
+        return 1
+    if sys.platform == "win32":  # this command's own files are locked while it runs: a helper installs after it exits
+        import subprocess
+        subprocess.Popen(["powershell", "-NoProfile", "-Command", updater.windows_helper(start=False) + "; Write-Host 'Done. Choose Offline in the settings.'; pause"],
+                         creationflags=0x00000010, close_fds=True)  # CREATE_NEW_CONSOLE: you see it finish
+        print("It installs in a new window once this one is done. hold-dictate can start after that.")
+        return 0
+    print("\nThe offline engine is installed. Choose Offline in the settings to use it.")
+    return 0
+
+
+def _follow_offline(state: dict) -> int:
+    """Shows how the running hold-dictate's install goes, until it restarts with the engine."""
+    from .settings_ui import running_url
+    if state["offline"]["can_install"]:
+        print(f"hold-dictate can't install it by itself: {state['offline']['can_install']}.")
+        return 1
+    print("hold-dictate is installing the offline engine, then restarts. It is a large download, so it takes a few minutes.")
+    shown, gone = "", None
+    deadline = time.monotonic() + 30 * 60
+    while time.monotonic() < deadline:
+        time.sleep(1)
+        try:
+            state = _daemon("/api/state", get=True) if running_url() else None
+        except OSError:
+            state = None
+        if state is None:  # restarting
+            gone = gone or time.monotonic()
+            if time.monotonic() - gone > 120:
+                print("hold-dictate didn't come back. Start it again, then check with: hold-dictate doctor")
+                return 1
+            continue
+        if gone or state["local_installed"]:
+            if state["local_installed"]:
+                print("The offline engine is installed. Choose Offline in the settings to use it.")
+                return 0
+            print(f"It didn't install: {state['offline']['status'] or 'hold-dictate restarted without it.'}")
+            return 1
+        offline = state["offline"]
+        line = f"{offline['progress']}%" if offline["progress"] is not None else offline["status"]
+        if line and line != shown:
+            print(f"  {line}", flush=True)
+            shown = line
+        if offline["progress"] is None and not offline["ready"] and offline["status"].startswith(("offline install failed", "an update")):
+            print(f"It didn't install: {offline['status']}")
+            return 1
+    print("It is taking too long. Check the settings page.")
+    return 1
 
 
 def cmd_last(args) -> int:
@@ -275,6 +348,7 @@ def main(argv=None) -> int:
     f.add_argument("path")
     f.set_defaults(fn=cmd_file)
     sub.add_parser("update", help="install the latest release now").set_defaults(fn=cmd_update)
+    sub.add_parser("offline", help="install the offline engine, to dictate without internet").set_defaults(fn=cmd_offline)
     for action in ("paste", "copy"):
         sub.add_parser(f"{action}-last", help=f"{action} the last dictation again").set_defaults(fn=cmd_last, action=action)
     h = sub.add_parser("history", help="list, search, delete or clear saved dictations")

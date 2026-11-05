@@ -3,7 +3,7 @@ import sys
 
 import pytest
 
-from hold_dictate import updater
+from hold_dictate import cli, updater
 from hold_dictate.config import Config
 
 
@@ -107,3 +107,44 @@ def test_windows_installs_after_exit_with_the_same_command(installs, monkeypatch
     assert "& 'uv' 'tool' 'install' '--force' '--python' " in script and "'hold-dictate[local] @ " in script
     assert "Start-Process" in script and "Start-Process" not in u.windows_helper(start=False)
 
+
+def test_offline_command_hands_the_install_to_the_running_app(monkeypatch, capsys):
+    has(monkeypatch)
+    asked = []
+    states = iter([None, {"local_installed": True, "offline": {}}])  # restarting, then back with the engine
+
+    def daemon(path, get=False):
+        asked.append(path)
+        if path == "/api/offline/install":
+            return {"offline": {"can_install": "", "status": "", "progress": None, "ready": False}}
+        return next(states)
+    monkeypatch.setattr(cli, "_daemon", daemon)
+    monkeypatch.setattr(cli.time, "sleep", lambda s: None)
+    monkeypatch.setattr("hold_dictate.settings_ui.running_url", lambda: "http://x")
+    assert cli.main(["offline"]) == 0
+    assert asked == ["/api/offline/install", "/api/state", "/api/state"] and "is installed" in capsys.readouterr().out
+
+
+def test_offline_command_in_a_checkout_says_what_to_install(monkeypatch, capsys):
+    has(monkeypatch)
+    monkeypatch.setattr(cli, "_daemon", lambda path, get=False: None)
+    assert cli.main(["offline"]) == 1  # tests run from a checkout, not a uv tool install
+    assert "-m pip install 'faster-whisper>=1.0'" in capsys.readouterr().out
+
+
+def test_the_settings_button_starts_the_install_and_shows_its_progress(tmp_path, monkeypatch):
+    from test_settings import call
+    from hold_dictate.settings_ui import SettingsServer
+    monkeypatch.setattr(updater, "installed_by_uv", lambda: True)
+    monkeypatch.setattr(updater, "find_uv", lambda: "uv")
+    u = updater.Updater(Config())
+    started = []
+    monkeypatch.setattr(u, "offline_now", lambda: started.append(1) or setattr(u, "job", "offline") or setattr(u, "progress", 40))
+    server = SettingsServer(Config(), updater=u, port=0).start()
+    try:
+        _, state = call(server, "/api/offline/install", {})
+    finally:
+        server.stop()
+    assert started == [1]
+    assert state["offline"] == {"status": "", "progress": 40, "ready": False, "can_install": "", "command": "hold-dictate offline"}
+    assert state["update"]["progress"] is None  # the update section doesn't show the engine's install as an update
