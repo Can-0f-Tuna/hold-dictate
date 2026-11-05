@@ -122,16 +122,30 @@ def _windows_apply(saved, gain):
 
 
 def _osascript(script):
-    return subprocess.run(["osascript", "-e", script], capture_output=True, text=True, timeout=3, check=True).stdout.strip()
+    # posix_spawn, not fork (see macos.spawn_options)
+    return subprocess.run(["/usr/bin/osascript", "-e", script], capture_output=True, text=True, timeout=3, check=True,
+                          close_fds=False).stdout.strip()
 
 
-# Apps whose own volume AppleScript can set. The system volume would show the volume popup.
-MAC_PLAYERS = ("Spotify", "Music")
+# Apps whose own volume AppleScript can set, with their bundle ids. The system volume would show the volume popup.
+MAC_PLAYERS = {"Spotify": "com.spotify.client", "Music": "com.apple.Music"}
+
+
+def _mac_running(bundle: str) -> bool:
+    """Asks the system directly. osascript took over 3 s to say an app wasn't running, on a busy Mac, at every
+    recording; this takes a millisecond, and osascript is left for the apps that are open."""
+    try:
+        from AppKit import NSRunningApplication
+        return bool(NSRunningApplication.runningApplicationsWithBundleIdentifier_(bundle))
+    except Exception:
+        return True  # can't tell: let AppleScript look
 
 
 def _mac_snapshot():
     saved = []
-    for app in MAC_PLAYERS:
+    for app, bundle in MAC_PLAYERS.items():
+        if not _mac_running(bundle):
+            continue
         # "is running" checks without launching the app; "tell" alone would start it.
         script = f'if application "{app}" is running then tell application "{app}" to get sound volume'
         try:

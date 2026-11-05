@@ -149,3 +149,11 @@ def test_mac_lowers_only_running_players(monkeypatch):
     ducking._mac_apply(saved, 0.2)
     assert scripts[-1].endswith('tell application "Spotify" to set sound volume to 16')
     assert not any("output volume" in s for s in scripts)  # the system volume shows a popup
+
+
+def test_mac_asks_no_applescript_of_players_that_are_closed(monkeypatch):
+    scripts = []
+    monkeypatch.setattr(subprocess, "run", lambda args, **kw: scripts.append(args) or subprocess.CompletedProcess(args, 0, "50", ""))
+    monkeypatch.setattr(ducking, "_mac_running", lambda bundle: bundle == "com.apple.Music")
+    assert ducking._mac_snapshot() == [("Music", 50)]
+    assert len(scripts) == 1 and "Music" in scripts[0][-1]
