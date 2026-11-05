@@ -416,6 +416,9 @@ def run(cfg: Config) -> int:
     extensions.started(dictation, server, detector)
     if cfg.provider == "local":
         dictation.local.preload()  # after the extensions, which may pick the model; the first dictation shouldn't wait
+    if sys.platform == "darwin":
+        from . import macos
+        macos.ask_microphone()
 
     def tick():
         dictation.tick()

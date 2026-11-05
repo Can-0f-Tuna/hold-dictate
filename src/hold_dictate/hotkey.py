@@ -5,9 +5,11 @@ HoldDetector is pure logic (fed key up/down events by name). Backends supply the
   - PynputBackend uses the OS keyboard hooks on Windows and macOS (and Linux X11).
 """
 import os
+import queue
 import select
 import struct
 import sys
+import threading
 import time
 
 MODIFIERS = ("alt", "ctrl", "shift", "super")
@@ -224,6 +226,20 @@ class PynputBackend:
         from pynput import keyboard
 
         win_state: set = set()
+        actions: queue.Queue = queue.Queue()
+
+        def deliver():
+            # The OS calls the hooks below with the keyboard waiting on them: Windows drops a slow low-level hook,
+            # and macOS turns off a tap that takes too long (a first recording waits for the Microphone prompt).
+            # So they only note the key; what it starts runs here.
+            while True:
+                action = actions.get()
+                try:
+                    on_action(action)
+                except Exception as e:
+                    print(f"hold-dictate: {action} failed: {e!r}", file=sys.stderr, flush=True)
+
+        threading.Thread(target=deliver, daemon=True, name="hotkey actions").start()
 
         def handle(key, pressed):
             name = _pynput_name(key)
@@ -231,7 +247,7 @@ class PynputBackend:
                 return
             action = detector.feed(name, name, pressed)
             if action:
-                on_action(action)
+                actions.put(action)
 
         def win_filter(msg, data):
             # Alt+Space opens the window menu on Windows; hide the Space press while dictating.
@@ -248,6 +264,9 @@ class PynputBackend:
             # Option+Space types a non-breaking space on macOS; swallow Space while dictating.
             try:
                 import Quartz
+                if event_type in _MAC_TAP_OFF:
+                    _mac_enable_tap(listener, "it was turned off" if event_type == _MAC_TAP_OFF[1] else "it was too slow")
+                    return event
                 code = Quartz.CGEventGetIntegerValueField(event, Quartz.kCGKeyboardEventKeycode)
                 flags = Quartz.CGEventGetFlags(event)
                 if code == 49 and any(h.key == "space" and all(flags & _MAC_FLAGS[m] for m in h.mods) for h in detector.hotkeys()):
@@ -256,19 +275,54 @@ class PynputBackend:
                 pass
             return event
 
-        extra = {}
+        extra, listener_class = {}, keyboard.Listener
         if sys.platform == "win32":
             extra["win32_event_filter"] = win_filter
         elif sys.platform == "darwin":
             extra["darwin_intercept"] = mac_intercept
-        listener = keyboard.Listener(
+            listener_class = _mac_listener_class(keyboard.Listener)
+        listener = listener_class(
             on_press=lambda k: handle(k, True), on_release=lambda k: handle(k, False), **extra
         )
         listener.start()
         while listener.is_alive():
             time.sleep(min(tick_seconds, 1.0))
+            if sys.platform == "darwin":
+                _mac_check_tap(listener)
             if on_tick:
                 on_tick()
+
+
+# kCGEventTapDisabledByTimeout, kCGEventTapDisabledByUserInput: macOS tells the tap it was switched off this way
+_MAC_TAP_OFF = (0xFFFFFFFE, 0xFFFFFFFF)
+
+
+def _mac_listener_class(base):
+    """pynput's listener, keeping its event tap where we can switch it back on: pynput never does."""
+    class Listener(base):
+        tap = None
+
+        def _create_event_tap(self):
+            self.tap = super()._create_event_tap()
+            return self.tap
+    return Listener
+
+
+def _mac_enable_tap(listener, why: str):
+    import Quartz
+    if listener.tap is not None:
+        Quartz.CGEventTapEnable(listener.tap, True)
+        print(f"hold-dictate: macOS turned the keyboard tap off ({why}); it is back on", file=sys.stderr, flush=True)
+
+
+def _mac_check_tap(listener):
+    """The tap's own notice can be missed; once a second, a tap that is off is switched back on."""
+    try:
+        import Quartz
+        if listener.tap is not None and not Quartz.CGEventTapIsEnabled(listener.tap):
+            _mac_enable_tap(listener, "found off")
+    except Exception:
+        pass
 
 
 def choose_backend():

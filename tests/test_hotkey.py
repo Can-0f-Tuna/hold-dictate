@@ -104,3 +104,50 @@ def test_evdev_backend_reports_which_hotkey():
     detector = HoldDetector(parse_hotkey("alt+space"), parse_hotkey("alt+shift+space"))
     EvdevBackend([os.fdopen(r, "rb", buffering=0)]).run(detector, actions.append)
     assert actions == ["start", "stop", "second:start", "second:stop"]
+
+
+@pytest.fixture
+def fake_pynput(monkeypatch):
+    """A pynput whose listener sends Alt+Space down and up from start(), the way the OS hook calls it."""
+    import types
+
+    class Key:
+        def __init__(self, name):
+            self.name = name
+
+    class Listener:
+        def __init__(self, on_press, on_release, **kw):
+            self.on_press, self.on_release, self.done = on_press, on_release, False
+
+        def start(self):
+            for key, down in [("alt", True), ("space", True), ("space", False), ("alt", False)]:
+                (self.on_press if down else self.on_release)(Key(key))
+            self.done = True
+
+        def is_alive(self):
+            return not self.done
+
+    keyboard = types.SimpleNamespace(Key=Key, Listener=Listener)
+    monkeypatch.setitem(sys.modules, "pynput", types.SimpleNamespace(keyboard=keyboard))
+    monkeypatch.setitem(sys.modules, "pynput.keyboard", keyboard)
+    monkeypatch.setattr(sys, "platform", "linux")  # no Windows filter or macOS tap in the fake
+
+
+def test_the_os_hook_returns_before_the_recording_starts(fake_pynput):
+    from hold_dictate.hotkey import PynputBackend
+    release, actions = threading.Event(), []
+
+    def slow(action):  # opening the microphone can wait on a macOS prompt
+        release.wait(5)
+        actions.append(action)
+
+    thread = threading.Thread(target=PynputBackend().run, args=(HoldDetector(parse_hotkey("alt+space")), slow), kwargs={"tick_seconds": 0.01})
+    thread.start()
+    thread.join(2)
+    assert not thread.is_alive() and actions == []  # the hook came back while the first action still waits
+    release.set()
+    for _ in range(100):
+        if len(actions) == 2:
+            break
+        threading.Event().wait(0.02)
+    assert actions == ["start", "stop"]
