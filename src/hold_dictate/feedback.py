@@ -94,8 +94,15 @@ class Feedback:
             return
         def play():
             try:
-                import sounddevice as sd
-                sd.play(TONES[name], SAMPLE_RATE)
+                if sys.platform == "darwin":
+                    # Not PortAudio: an output stream on the device that also records (a headset, a Mac's own
+                    # speakers and mic in one device) makes PortAudio set that device's rate, and the recording
+                    # that just started comes out silent.
+                    from . import macos
+                    macos.play_sound(TONES[name])
+                else:
+                    import sounddevice as sd
+                    sd.play(TONES[name], SAMPLE_RATE)
             except Exception:
                 pass
         threading.Thread(target=play, daemon=True).start()

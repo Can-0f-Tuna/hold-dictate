@@ -1,8 +1,11 @@
 """macOS only: the permissions, through the system's own calls. Nothing here runs on another system."""
 import ctypes
 import os
+import subprocess
 import sys
+import tempfile
 import threading
+from collections import deque
 
 TERMINALS = {"Apple_Terminal": "Terminal", "iTerm.app": "iTerm", "vscode": "Visual Studio Code", "WarpTerminal": "Warp"}
 
@@ -63,3 +66,27 @@ def accessibility_problem() -> str:
         return f"cannot read the keyboard. Turn on {name} in {where}. The shortcut works as soon as it's on."
     return (f"cannot read the keyboard. Turn on {name} in {where}. If it isn't in the list, add it with the + button "
             f"(Cmd+Shift+G takes a path). The shortcut works as soon as it's on. The program is:\n    {path}")
+
+
+_playing: deque = deque(maxlen=8)  # an NSSound must live until it has played
+
+
+def play_sound(samples):
+    """Plays float samples at 16 kHz through AppKit, or afplay if that fails: never through PortAudio."""
+    from .audio import wav_bytes
+    data = wav_bytes(samples)
+    try:
+        from AppKit import NSSound
+        from Foundation import NSData
+        sound = NSSound.alloc().initWithData_(NSData.dataWithBytes_length_(data, len(data)))
+        if sound is not None and sound.play():
+            _playing.append(sound)
+            return
+    except Exception:
+        pass
+    with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as f:
+        f.write(data)
+    try:
+        subprocess.run(["/usr/bin/afplay", f.name], capture_output=True, timeout=5)
+    finally:
+        os.unlink(f.name)
