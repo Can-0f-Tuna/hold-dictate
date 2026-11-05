@@ -19,7 +19,8 @@ Transcribing:
                                               service in the settings; None leaves it to that service. `force`
                                               (a language code or '') and `prompt` come from the languages you
                                               picked; `live` is a pass of live typing. A failure is logged and
-                                              the service in the settings takes the clip
+                                              the service in the settings takes the clip, except a TranscribeError:
+                                              that is the answer, and the dictation fails with it
   transcribes(cfg) -> bool                    True when transcribe() takes dictations now, so no API key is needed
 Text:
   adjust_prompt(prompt, cfg) -> str           the spelling hint sent to the transcriber
@@ -144,9 +145,10 @@ def transcribe(cfg, speech, hints, live: bool = False):
     hooks = _hooks("transcribe")
     if not hooks:
         return None
+    from .providers import TranscribeError  # providers imports this module
     force, prompt = hints(cfg)
     for hook in hooks:
-        text = _call(hook, cfg, speech, force, prompt, live)
+        text = _call(hook, cfg, speech, force, prompt, live, passes=TranscribeError)
         if isinstance(text, str):
             return text
     return None
