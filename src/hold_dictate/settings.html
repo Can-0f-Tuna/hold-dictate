@@ -1025,7 +1025,7 @@ async function followOffline() {
   }
   S = s;
   const o = s.offline;
-  if (s.local_installed) { offline.run = null; render(s); return; } // the hero gives way to the shortcut
+  if (s.local_installed && !o.ready) { offline.run = null; render(s); return; } // back after the restart: the hero gives way to the shortcut
   if (offline.run.gone || (o.progress == null && !o.ready && (/^(offline install failed|an update|cannot)/.test(o.status) || Date.now() - offline.run.started > 15000 && !o.status.startsWith('checking')))) {
     offline.run = null; render(s); // failed, or it came back without the engine: the server's words
     if (!s.offline.status) showOffline("It didn't install. Try again, or run " + o.command + ' in a terminal.', null, 'bad');

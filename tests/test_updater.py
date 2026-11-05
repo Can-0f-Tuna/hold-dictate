@@ -111,7 +111,8 @@ def test_windows_installs_after_exit_with_the_same_command(installs, monkeypatch
 def test_offline_command_hands_the_install_to_the_running_app(monkeypatch, capsys):
     has(monkeypatch)
     asked = []
-    states = iter([None, {"local_installed": True, "offline": {}}])  # restarting, then back with the engine
+    states = iter([{"local_installed": True, "offline": {"ready": True, "progress": None, "status": "installed"}},  # not restarted yet
+                   None, {"local_installed": True, "offline": {"ready": False}}])  # restarting, then back with the engine
 
     def daemon(path, get=False):
         asked.append(path)
@@ -122,7 +123,7 @@ def test_offline_command_hands_the_install_to_the_running_app(monkeypatch, capsy
     monkeypatch.setattr(cli.time, "sleep", lambda s: None)
     monkeypatch.setattr("hold_dictate.settings_ui.running_url", lambda: "http://x")
     assert cli.main(["offline"]) == 0
-    assert asked == ["/api/offline/install", "/api/state", "/api/state"] and "is installed" in capsys.readouterr().out
+    assert asked == ["/api/offline/install", "/api/state", "/api/state", "/api/state"] and "is installed" in capsys.readouterr().out
 
 
 def test_offline_command_in_a_checkout_says_what_to_install(monkeypatch, capsys):

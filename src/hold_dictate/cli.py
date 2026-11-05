@@ -277,7 +277,7 @@ def _follow_offline(state: dict) -> int:
                 print("hold-dictate didn't come back. Start it again, then check with: hold-dictate doctor")
                 return 1
             continue
-        if gone or state["local_installed"]:
+        if gone or state["local_installed"] and not state["offline"]["ready"]:  # back after the restart
             if state["local_installed"]:
                 print("The offline engine is installed. Choose Offline in the settings to use it.")
                 return 0
