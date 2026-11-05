@@ -540,7 +540,7 @@ function blocker(s) {
     const text = first.replace(/^cannot read the keyboard\.\s*/i, '');
     return { title: keyboard ? 'hold-dictate can\'t read the keyboard yet.' : 'The shortcut can\'t work yet.', lede: text[0].toUpperCase() + text.slice(1) + (cmd && !text.endsWith(':') ? ' Run this in a terminal:' : ''), code: cmd || undefined };
   }
-  if (c.provider === 'local' && !s.local_installed) return s.offline.can_install
+  if (c.provider === 'local') return s.local_installed ? null : s.offline.can_install
     ? { title: 'Install the offline engine to start.', lede: 'It runs on this computer without internet. Run this in a terminal, then reload this page:', code: s.offline.command }
     : { title: 'Install the offline engine to start.', lede: 'It runs on this computer without internet. It is a large download, a few hundred MB, and hold-dictate restarts when it is done.', button: offline.box };
   if (c.provider === 'custom' && !c.base_url) return { title: 'Add your server\'s address to start.', lede: 'A custom service needs the address of any server that speaks the OpenAI transcription API.', move: 'customRows' };
