@@ -57,6 +57,66 @@ def _windows_front_app() -> str:
     return ""
 
 
+def _mac_front_title() -> str:
+    """The focused window's title through the Accessibility API, which hold-dictate already has for pasting."""
+    import ctypes
+    asn = _run(["lsappinfo", "front"], text=True).stdout.strip()
+    out = _run(["lsappinfo", "info", "-only", "pid", asn], text=True).stdout if asn else ""
+    m = re.search(r'"pid"\s*=\s*(\d+)', out)
+    if not m:
+        return ""
+    ax = ctypes.CDLL("/System/Library/Frameworks/ApplicationServices.framework/ApplicationServices")
+    cf = ctypes.CDLL("/System/Library/Frameworks/CoreFoundation.framework/CoreFoundation")
+    ref = ctypes.c_void_p
+    ax.AXUIElementCreateApplication.restype = ref
+    ax.AXUIElementCreateApplication.argtypes = [ctypes.c_int]
+    ax.AXUIElementCopyAttributeValue.restype = ctypes.c_int32
+    ax.AXUIElementCopyAttributeValue.argtypes = [ref, ref, ctypes.POINTER(ref)]
+    cf.CFStringCreateWithCString.restype = ref
+    cf.CFStringCreateWithCString.argtypes = [ref, ctypes.c_char_p, ctypes.c_uint32]
+    cf.CFStringGetCString.restype = ctypes.c_bool
+    cf.CFStringGetCString.argtypes = [ref, ctypes.c_char_p, ctypes.c_long, ctypes.c_uint32]
+    cf.CFGetTypeID.restype = cf.CFStringGetTypeID.restype = ctypes.c_ulong
+    cf.CFGetTypeID.argtypes = [ref]
+    cf.CFRelease.argtypes = [ref]
+    utf8 = 0x08000100
+    held = []
+
+    def attribute(element, name: bytes):
+        key = cf.CFStringCreateWithCString(None, name, utf8)
+        held.append(key)
+        value = ref()
+        if ax.AXUIElementCopyAttributeValue(element, key, ctypes.byref(value)) != 0 or not value.value:
+            return None
+        held.append(value)
+        return value
+    try:
+        app = ax.AXUIElementCreateApplication(int(m.group(1)))
+        if not app:
+            return ""
+        held.append(ref(app))
+        window = attribute(app, b"AXFocusedWindow")
+        title = attribute(window, b"AXTitle") if window else None
+        if not title or cf.CFGetTypeID(title) != cf.CFStringGetTypeID():
+            return ""
+        buf = ctypes.create_string_buffer(1024)
+        return buf.value.decode("utf-8", "replace") if cf.CFStringGetCString(title, buf, len(buf), utf8) else ""
+    finally:
+        for item in held:
+            cf.CFRelease(item)
+
+
+def _windows_front_title() -> str:
+    import ctypes
+    from ctypes import wintypes
+    user32 = ctypes.WinDLL("user32")
+    user32.GetForegroundWindow.restype = wintypes.HWND
+    user32.GetWindowTextW.argtypes = [wintypes.HWND, wintypes.LPWSTR, ctypes.c_int]
+    buf = ctypes.create_unicode_buffer(512)
+    user32.GetWindowTextW(user32.GetForegroundWindow(), buf, len(buf))
+    return buf.value
+
+
 def can_detect_focus() -> bool:
     """Whether focused_app() can name the focused app here (not on GNOME or KDE under Wayland)."""
     if sys.platform in ("darwin", "win32"):
@@ -89,6 +149,33 @@ def focused_app() -> str:
                     stack += node.get("nodes", []) + node.get("floating_nodes", [])
         elif shutil.which("xdotool"):
             return _run(["xdotool", "getwindowfocus", "getwindowclassname"], text=True).stdout.strip()
+    except Exception:
+        pass
+    return ""
+
+
+def focused_title() -> str:
+    """Best-effort title of the focused window ("Inbox - Gmail - Google Chrome", "#general - Slack"), or ''. It can
+    name what is open there, so it goes only where an extension sends it, such as a text clean-up."""
+    try:
+        if sys.platform == "darwin":
+            return _mac_front_title()
+        if sys.platform == "win32":
+            return _windows_front_title()
+        if _wayland():
+            if shutil.which("niri"):
+                return (json.loads(_run(["niri", "msg", "-j", "focused-window"], text=True).stdout) or {}).get("title") or ""
+            if shutil.which("hyprctl"):
+                return json.loads(_run(["hyprctl", "activewindow", "-j"], text=True).stdout).get("title") or ""
+            if shutil.which("swaymsg"):
+                stack = [json.loads(_run(["swaymsg", "-t", "get_tree"], text=True).stdout)]
+                while stack:
+                    node = stack.pop()
+                    if node.get("focused"):
+                        return node.get("name") or ""
+                    stack += node.get("nodes", []) + node.get("floating_nodes", [])
+        elif shutil.which("xdotool"):
+            return _run(["xdotool", "getwindowfocus", "getwindowname"], text=True).stdout.strip()
     except Exception:
         pass
     return ""

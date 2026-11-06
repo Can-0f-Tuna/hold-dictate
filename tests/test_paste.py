@@ -78,3 +78,23 @@ def test_can_detect_focus(tmp_path, monkeypatch):
     (tmp_path / "niri").write_text("#!/bin/sh\n")
     os.chmod(tmp_path / "niri", 0o755)
     assert paste.can_detect_focus()
+
+
+def test_focused_title_on_x11_niri_and_hyprland(tmp_path, monkeypatch):
+    """The window title comes from the same tool as the app name; no tool, or a tool that fails, gives ''."""
+    def tool(name, out):
+        script = tmp_path / name
+        script.write_text(f"#!/bin/sh\n/bin/cat <<'END'\n{out}\nEND\n")
+        script.chmod(0o755)
+    monkeypatch.setenv("PATH", str(tmp_path))
+    monkeypatch.delenv("WAYLAND_DISPLAY", raising=False)
+    assert paste.focused_title() == ""
+    tool("xdotool", "Inbox - Gmail - Mozilla Firefox")
+    assert paste.focused_title() == "Inbox - Gmail - Mozilla Firefox"
+    monkeypatch.setenv("WAYLAND_DISPLAY", "wayland-1")
+    tool("hyprctl", '{"class": "kitty", "title": "claude — ~/site"}')
+    assert paste.focused_title() == "claude — ~/site"
+    tool("niri", '{"app_id": "org.telegram.desktop", "title": "Telegram (3)"}')
+    assert paste.focused_title() == "Telegram (3)"
+    tool("niri", "not json")
+    assert paste.focused_title() == ""
