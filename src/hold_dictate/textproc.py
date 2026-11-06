@@ -147,17 +147,18 @@ def spoken_punctuation(text: str) -> str:
     return _tidy(changed) if changed != text else text
 
 
-def clean(text: str, cfg) -> str:
-    """The text to paste, or '' when there is nothing worth pasting."""
+def clean(text: str, cfg, manual: bool = True) -> str:
+    """The text to paste, or '' when there is nothing worth pasting. With manual=False the filler and spoken
+    punctuation steps are skipped: a rewriter from an extension does them, better, from the meaning."""
     text = text.strip()
     if not text or (cfg.drop_hallucinations and is_hallucination(text)):
         return ""
     overrides = extensions.adjust_words(cfg.word_overrides, cfg)
     if overrides:
         text = apply_overrides(text, overrides)
-    if cfg.remove_fillers:
+    if manual and cfg.remove_fillers:
         text = remove_fillers(text, filler_list(cfg.filler_words))
-    if cfg.spoken_punctuation:
+    if manual and cfg.spoken_punctuation:
         text = spoken_punctuation(text)
     return text.strip(" \t")
 

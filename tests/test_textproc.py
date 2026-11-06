@@ -84,6 +84,13 @@ def test_clean_runs_every_step_in_order():
     assert clean("Um, push it to get hub comma please.", cfg) == "Push it to GitHub, please."
 
 
+def test_a_rewriter_takes_over_fillers_and_spoken_punctuation():
+    """With manual=False (a rewriter will clean the text) your replacements and the noise filter still run."""
+    cfg = Config(remove_fillers=True, spoken_punctuation=True, word_overrides={"get hub": "GitHub"})
+    assert clean("Um, push it to get hub comma please.", cfg, manual=False) == "Um, push it to GitHub comma please."
+    assert clean("Thanks for watching!", cfg, manual=False) == ""
+
+
 sh = pytest.mark.skipif(sys.platform == "win32", reason="POSIX shell commands")
 
 

@@ -9,7 +9,8 @@ Dictating:
   second_hotkey(cfg, hotkey) -> Hotkey | None a second shortcut beside `hotkey`; asked at start and after each save
   second_recording(dictation)                 at that shortcut's press: a function that takes the finished recording,
                                               None for a plain dictation, False to do nothing
-  rewriter(dictation) -> callable | None      (text, app) -> text before pasting; while there is one, nothing is typed live
+  rewriter(dictation) -> callable | None      (text, app) -> text before pasting; while there is one, nothing is typed live,
+                                              and filler removal and spoken punctuation are left to it
   after_dictation(dictation, audio, raw, cleaned, final, app)
                                               once the text went out, also when the app's rule is to do nothing. Not
                                               after a text hook drops it. Typed live, raw and cleaned are `final` too

@@ -311,14 +311,14 @@ class Dictation:
             self.fb.error("The microphone is silent. Check that it isn't muted.", icon="mic")
             return
         self.last_used = time.monotonic()
-        text = textproc.clean(raw, self.cfg)
+        rewrite = extensions.rewriter(self)
+        text = textproc.clean(raw, self.cfg, manual=rewrite is None)
         print(f"transcribed ({source}) in {self.last_used - started:.1f}s: {raw!r}" + (f" -> {text!r}" if text != raw.strip() else ""), flush=True)
         if not text:
             self.fb.done()
             return
         app = self.focus()
         dictated = text
-        rewrite = extensions.rewriter(self)
         if rewrite:
             text = rewrite(text, app)
         self.fb.done()
